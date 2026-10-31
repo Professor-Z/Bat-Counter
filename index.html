@@ -110,10 +110,8 @@ ul.tips{margin:8px 0 0;padding-left:20px;color:var(--muted);font-size:.92rem}
       <p class="hint">On a typical computer this takes about as long as the video itself (longer for 4K or very long
         videos). Every frame is analysed, so a slower computer just takes longer. Keep this tab open until it finishes.</p></div></div>
     <div class="opts">
-      <label><input type="checkbox" id="optBoxes"><span>Show tracking boxes in the output video
+      <label><input type="checkbox" id="optBoxes" checked><span>Show tracking boxes in the output video
         <small>Green = counted, orange = just left the house, gray = a bat that didn't come from the house.</small></span></label>
-      <label><input type="checkbox" id="optNet" checked><span>Subtract bats that fly back in
-        <small>The counter shows bats out of the house.</small></span></label>
       <label style="display:block">Sensitivity: <output id="sensOut">7 (normal)</output>
         <input type="range" id="optSens" min="1" max="10" step="1" value="7">
         <small>Slide right to pick up fainter or smaller bats (late dusk, camera far from the house).
@@ -816,7 +814,7 @@ async function run(){
   S.running = true; S.stop = false; $('runErr').classList.add('hidden');
   $('runBtn').disabled = true; $('stopBtn').classList.remove('hidden'); $('progWrap').classList.remove('hidden');
   $('cardResult').classList.add('hidden');
-  applySensitivity(+$('optSens').value); P.net = $('optNet').checked;
+  applySensitivity(+$('optSens').value); P.net = true;   // bats seen flying back in are subtracted
   const showBoxes = $('optBoxes').checked;
   // audio graph must be created inside the click
   try { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume(); } catch(e){ audioCtx = null; }
