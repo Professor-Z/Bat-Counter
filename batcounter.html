@@ -1,0 +1,1518 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bat Emergence Counter</title>
+<meta name="description" content="Count the bats leaving your bat house from a dusk video. Runs entirely in your browser; your video is never uploaded.">
+<style>
+:root{
+  --bg:#0f1420; --panel:#171e2e; --panel2:#1e2739; --ink:#e9edf5; --muted:#9aa6bd;
+  --line:#2c3850; --accent:#f2a541; --accent-ink:#1a1206; --ok:#5fd38d; --house:#4c8dff;
+  --danger:#ff7a6b; --radius:14px;
+}
+:root[data-theme="light"]{
+  --bg:#f4f1ea; --panel:#ffffff; --panel2:#f7f4ee; --ink:#1d2433; --muted:#5c6577;
+  --line:#ddd6c8; --accent:#c9771a; --accent-ink:#ffffff; --ok:#1f8f4e; --house:#2563eb; --danger:#c0392b;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+a{color:var(--accent)}
+.wrap{max-width:980px;margin:0 auto;padding:28px 16px 64px}
+header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:22px}
+h1{font-size:clamp(1.6rem,4vw,2.3rem);line-height:1.15;margin:0 0 6px;letter-spacing:-.01em}
+.sub{color:var(--muted);margin:0;max-width:60ch}
+.themebtn{flex:none;background:var(--panel);border:1px solid var(--line);color:var(--ink);
+  border-radius:999px;padding:6px 12px;font-size:.85rem;cursor:pointer}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px;margin-bottom:16px}
+.step{display:flex;gap:12px;align-items:baseline;margin:0 0 12px}
+.num{flex:none;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;
+  background:var(--accent);color:var(--accent-ink);font-weight:700;font-size:.9rem}
+.step h2{font-size:1.1rem;margin:0}
+.hint{color:var(--muted);font-size:.92rem;margin:4px 0 0}
+.drop{display:block;border:2px dashed var(--line);border-radius:12px;padding:26px;text-align:center;cursor:pointer;
+  background:var(--panel2);transition:border-color .15s}
+.drop:hover,.drop.over{border-color:var(--accent)}
+.drop input{display:none}
+.btn{appearance:none;display:inline-block;text-decoration:none;text-align:center;border:0;border-radius:10px;padding:12px 20px;font-weight:700;font-size:1rem;
+  cursor:pointer;background:var(--accent);color:var(--accent-ink)}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.stage{position:relative;background:#000;border-radius:12px;overflow:hidden;touch-action:none;
+  max-height:70vh;display:flex;justify-content:center}
+.stage canvas{display:block;max-width:100%;max-height:70vh;height:auto;cursor:crosshair}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:.85rem;color:var(--muted);margin-top:10px}
+.sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px 22px;margin:4px 0 16px}
+.opts label{display:flex;gap:10px;align-items:flex-start;font-size:.95rem}
+.opts input[type=checkbox]{margin-top:4px;accent-color:var(--accent)}
+.opts input[type=range]{width:100%;accent-color:var(--accent)}
+.opts small{display:block;color:var(--muted);font-size:.82rem}
+.prog{height:10px;background:var(--panel2);border-radius:99px;overflow:hidden;border:1px solid var(--line)}
+.prog>div{height:100%;width:0;background:var(--accent);transition:width .2s}
+.status{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:10px 0 0;font-size:.95rem}
+.big{font-size:clamp(2.4rem,9vw,4rem);font-weight:800;letter-spacing:-.02em;line-height:1;margin:6px 0 4px;
+  font-variant-numeric:tabular-nums}
+.result video{width:100%;max-height:75vh;background:#000;border-radius:12px;display:block}
+.hidden{display:none!important}
+.err{color:var(--danger);font-weight:600}
+details{margin-top:6px}
+summary{cursor:pointer;color:var(--muted)}
+footer{color:var(--muted);font-size:.85rem;margin-top:28px}
+ul.tips{margin:8px 0 0;padding-left:20px;color:var(--muted);font-size:.92rem}
+@media (max-width:560px){ .card{padding:16px} .btn{width:100%} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Bat Emergence Counter</h1>
+      <p class="sub">Count the bats leaving your bat house at dusk. Load a video, draw a box around the house,
+        and get back the video with a running count. Everything runs in your browser; your video is never uploaded.</p>
+    </div>
+    <button class="themebtn" id="themeBtn" type="button">Light</button>
+  </header>
+
+  <section class="card" id="cardLoad">
+    <div class="step"><span class="num">1</span><div><h2>Choose your video</h2>
+      <p class="hint">A steady (tripod) shot of the house against the evening sky works best. MP4 or MOV.</p></div></div>
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept="video/*">
+      <strong>Tap to choose a video</strong> <span class="hint">or drop it here</span>
+    </label>
+    <p class="err hidden" id="loadErr"></p>
+    <details><summary>Filming tips</summary>
+      <ul class="tips">
+        <li>Use a tripod and keep the whole house in frame with open sky around it.</li>
+        <li>Start recording a minute before the first bat comes out.</li>
+        <li>Avoid branches directly over the openings; bats behind leaves can't be seen.</li>
+        <li>Record at normal speed (not slow-motion), 30 or 60 fps.</li>
+      </ul>
+    </details>
+  </section>
+
+  <section class="card hidden" id="cardBox">
+    <div class="step"><span class="num">2</span><div><h2>Draw a box around your bat house</h2>
+      <p class="hint">Drag a box that loosely covers the whole house. The house should turn blue and get an
+        orange exit band around it. Bats are counted when they leave that band. Redraw any time.</p></div></div>
+    <div class="stage"><canvas id="boxCanvas"></canvas></div>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--house)"></i>House (and top of its pole)</span>
+      <span><i class="sw" style="background:#f2a541"></i>Exit band</span>
+    </div>
+  </section>
+
+  <section class="card hidden" id="cardRun">
+    <div class="step"><span class="num">3</span><div><h2>Count the bats</h2>
+      <p class="hint">On a typical computer this takes about as long as the video itself (longer for 4K or very long
+        videos). Every frame is analysed, so a slower computer just takes longer. Keep this tab open until it finishes.</p></div></div>
+    <div class="opts">
+      <label><input type="checkbox" id="optBoxes"><span>Show tracking boxes in the output video
+        <small>Green = counted, orange = just left the house, gray = a bat that didn't come from the house.</small></span></label>
+      <label><input type="checkbox" id="optNet" checked><span>Subtract bats that fly back in
+        <small>The counter shows bats out of the house.</small></span></label>
+      <label style="display:block">Sensitivity: <output id="sensOut">7 (normal)</output>
+        <input type="range" id="optSens" min="1" max="10" step="1" value="7">
+        <small>Slide right to pick up fainter or smaller bats (late dusk, camera far from the house).
+          Too high can count noise, such as specks in a grainy video.</small></label>
+    </div>
+    <div class="row">
+      <button class="btn" id="runBtn" type="button" disabled>Count bats</button>
+      <button class="btn ghost hidden" id="stopBtn" type="button">Stop</button>
+    </div>
+    <div id="progWrap" class="hidden" style="margin-top:16px">
+      <div class="prog"><div id="progBar"></div></div>
+      <div class="status"><span id="stageTxt">Starting…</span><span id="liveCount"></span></div>
+      <div class="stage" style="margin-top:12px"><canvas id="liveCanvas"></canvas></div>
+    </div>
+    <p class="err hidden" id="runErr"></p>
+  </section>
+
+  <section class="card hidden result" id="cardResult">
+    <div class="step"><span class="num">4</span><div><h2>Result</h2></div></div>
+    <div class="big" id="finalCount">0 Bats</div>
+    <p class="hint" id="finalDetail"></p>
+    <video id="outVideo" controls playsinline></video>
+    <div class="row" style="margin-top:14px">
+      <a class="btn" id="dlVideo" download>Download video</a>
+      <a class="btn ghost" id="dlCsv" download="bat_counts.csv">Download count log (CSV)</a>
+    </div>
+  </section>
+
+  <footer>Works best in a current Chrome, Edge or Safari on a computer. Long or 4K videos take longer.
+    Counts are automatic estimates. Bats that leave bunched together are counted from the size of the bunch; bats hidden behind leaves can't be seen.
+  </footer>
+</div>
+
+<!-- hidden working elements -->
+<video id="workVideo" muted playsinline preload="auto" class="hidden"></video>
+<video id="recVideo" playsinline preload="auto" class="hidden"></video>
+
+<script>
+"use strict";
+/* =====================================================================
+   Bat Emergence Counter: in-browser port of bat_counter.py
+   All pixel parameters are in "analysis pixels": the video is analysed
+   scaled to 540 px tall (a 1080p video at half size).
+   ===================================================================== */
+
+const AH = 540;                          // analysis height
+const P = {                               // defaults (analysis px; frames at 30fps)
+  thresh: 22, minArea: 10, portal: 15, topPortal: 30, minTravel: 15,
+  gate: 22.5, newGate: 15, reacqRadius: 45, reacqSec: 0.5, splitRadius: 25,
+  splitSep: 17.5, splitFrames: 3, splitMinArea: 15, splitAgeSec: 2, crowd: 15,
+  poleCrowd: 25, poleLen: 250, maxMissed: 4, minFrames: 3, flicker: 0.06,
+  dupThresh: 0.0005, clumpFactor: 1.8, relThresh: 0.135, noiseK: 3.5, maxThresh: 40, bgStepSec: 0.5, bgWindowSec: 3, net: true,
+};
+
+/* ---------------------------------------------------------- image utils */
+function toGray(rgba, n){
+  const g = new Uint8Array(n);
+  for (let i = 0, j = 0; i < n; i++, j += 4)
+    g[i] = (rgba[j] * 77 + rgba[j + 1] * 150 + rgba[j + 2] * 29) >> 8;
+  return g;
+}
+// shifted copy: out(x,y) = src(x+dx, y+dy), outside -> fill
+function shiftImg(src, w, h, dx, dy, fill){
+  const out = new Uint8Array(w * h).fill(fill);
+  for (let y = 0; y < h; y++){
+    const sy = y + dy; if (sy < 0 || sy >= h) continue;
+    const x0 = Math.max(0, -dx), x1 = Math.min(w, w - dx);
+    if (x1 > x0) out.set(src.subarray(sy * w + x0 + dx, sy * w + x1 + dx), y * w + x0);
+  }
+  return out;
+}
+function boxBlurH(src, dst, w, h, r){
+  const iarr = 1 / (r + r + 1);
+  for (let y = 0; y < h; y++){
+    const row = y * w; let acc = 0;
+    for (let x = -r - 1; x < r; x++) acc += src[row + Math.min(w - 1, Math.max(0, x))];
+    for (let x = 0; x < w; x++){
+      acc += src[row + Math.min(w - 1, x + r)] - src[row + Math.max(0, x - r - 1)];
+      dst[row + x] = acc * iarr;
+    }
+  }
+}
+function boxBlurV(src, dst, w, h, r){
+  const iarr = 1 / (r + r + 1);
+  for (let x = 0; x < w; x++){
+    let acc = 0;
+    for (let y = -r - 1; y < r; y++) acc += src[Math.min(h - 1, Math.max(0, y)) * w + x];
+    for (let y = 0; y < h; y++){
+      acc += src[Math.min(h - 1, y + r) * w + x] - src[Math.max(0, y - r - 1) * w + x];
+      dst[y * w + x] = acc * iarr;
+    }
+  }
+}
+function gaussBlur(src, w, h, sigma){            // 3 box passes
+  const n = 3, wIdeal = Math.sqrt((12 * sigma * sigma / n) + 1);
+  let wl = Math.floor(wIdeal); if (wl % 2 === 0) wl--;
+  const m = Math.round((12 * sigma * sigma - n * wl * wl - 4 * n * wl - 3 * n) / (-4 * wl - 4));
+  let a = Float32Array.from(src), b = new Float32Array(w * h);
+  for (let i = 0; i < n; i++){
+    const r = ((i < m ? wl : wl + 2) - 1) / 2;
+    boxBlurH(a, b, w, h, r); boxBlurV(b, a, w, h, r);
+  }
+  return a;
+}
+function percentile(img, p){
+  const hist = new Uint32Array(256); for (let i = 0; i < img.length; i++) hist[img[i]]++;
+  let target = p * img.length, acc = 0;
+  for (let v = 0; v < 256; v++){ acc += hist[v]; if (acc >= target) return v; }
+  return 255;
+}
+// binary morphology on Uint8Array masks (0/1), square kernel (2r+1)
+function dilate(m, w, h, r){
+  if (r <= 0) return m.slice();
+  const t = new Uint8Array(w * h), o = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++){ const row = y * w;
+    for (let x = 0; x < w; x++){ let v = 0;
+      for (let k = Math.max(0, x - r), e = Math.min(w - 1, x + r); k <= e; k++) if (m[row + k]){ v = 1; break; }
+      t[row + x] = v; } }
+  for (let x = 0; x < w; x++) for (let y = 0; y < h; y++){ let v = 0;
+    for (let k = Math.max(0, y - r), e = Math.min(h - 1, y + r); k <= e; k++) if (t[k * w + x]){ v = 1; break; }
+    o[y * w + x] = v; }
+  return o;
+}
+function erode(m, w, h, r){
+  const inv = new Uint8Array(w * h); for (let i = 0; i < m.length; i++) inv[i] = m[i] ? 0 : 1;
+  const d = dilate(inv, w, h, r); for (let i = 0; i < d.length; i++) d[i] = d[i] ? 0 : 1; return d;
+}
+// 2x2 opening (removes specks thinner than ~2 px)
+function open2(m, w, h){
+  const e = new Uint8Array(w * h);
+  for (let y = 0; y < h - 1; y++) for (let x = 0; x < w - 1; x++){ const i = y * w + x;
+    e[i] = m[i] & m[i + 1] & m[i + w] & m[i + w + 1]; }
+  const o = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++){ const i = y * w + x;
+    o[i] = e[i] | (x > 0 ? e[i - 1] : 0) | (y > 0 ? e[i - w] : 0) | (x > 0 && y > 0 ? e[i - w - 1] : 0); }
+  return o;
+}
+// connected components (8-connectivity) with stats
+function components(m, w, h, wantLabels){
+  const lab = new Int32Array(w * h), parent = [0];
+  const find = a => { while (parent[a] !== a){ parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+  const unite = (a, b) => { a = find(a); b = find(b); if (a !== b) parent[Math.max(a, b)] = Math.min(a, b); };
+  let next = 1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++){
+    const i = y * w + x; if (!m[i]) continue;
+    const nb = [];
+    if (x > 0 && lab[i - 1]) nb.push(lab[i - 1]);
+    if (y > 0){ if (lab[i - w]) nb.push(lab[i - w]);
+      if (x > 0 && lab[i - w - 1]) nb.push(lab[i - w - 1]);
+      if (x < w - 1 && lab[i - w + 1]) nb.push(lab[i - w + 1]); }
+    if (!nb.length){ lab[i] = next; parent.push(next); next++; }
+    else { let mn = nb[0]; for (const v of nb) if (v < mn) mn = v; lab[i] = mn; for (const v of nb) unite(mn, v); }
+  }
+  const map = new Map(), comps = [];
+  for (let i = 0; i < w * h; i++){
+    if (!lab[i]) continue; const r = find(lab[i]);
+    let c = map.get(r);
+    if (!c){ c = {id: comps.length + 1, area: 0, sx: 0, sy: 0, x0: 1e9, y0: 1e9, x1: -1, y1: -1}; map.set(r, c); comps.push(c); }
+    const x = i % w, y = (i / w) | 0;
+    c.area++; c.sx += x; c.sy += y;
+    if (x < c.x0) c.x0 = x; if (x > c.x1) c.x1 = x; if (y < c.y0) c.y0 = y; if (y > c.y1) c.y1 = y;
+    if (wantLabels) lab[i] = c.id;
+  }
+  return {comps, lab};
+}
+// exact Euclidean distance transform (Felzenszwalb) to nearest set pixel
+function edt(mask, w, h){
+  const INF = 1e12, f = new Float64Array(Math.max(w, h)), d = new Float64Array(Math.max(w, h));
+  const v = new Int32Array(Math.max(w, h)), z = new Float64Array(Math.max(w, h) + 1);
+  const g = new Float64Array(w * h);
+  for (let i = 0; i < w * h; i++) g[i] = mask[i] ? 0 : INF;
+  const pass = (n, get, set) => {
+    for (let q = 0; q < n; q++) f[q] = get(q);
+    let k = 0; v[0] = 0; z[0] = -INF; z[1] = INF;
+    for (let q = 1; q < n; q++){
+      let s;
+      while (true){ s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]); if (s <= z[k]) k--; else break; }
+      k++; v[k] = q; z[k] = s; z[k + 1] = INF;
+    }
+    k = 0;
+    for (let q = 0; q < n; q++){ while (z[k + 1] < q) k++; d[q] = (q - v[k]) * (q - v[k]) + f[v[k]]; }
+    for (let q = 0; q < n; q++) set(q, d[q]);
+  };
+  for (let x = 0; x < w; x++) pass(h, q => g[q * w + x], (q, val) => { g[q * w + x] = val; });
+  for (let y = 0; y < h; y++) pass(w, q => g[y * w + q], (q, val) => { g[y * w + q] = val; });
+  const out = new Float32Array(w * h); for (let i = 0; i < w * h; i++) out[i] = Math.sqrt(g[i]);
+  return out;
+}
+
+/* ---------------------------------------------------------- stabilization */
+function down4(g, w, h){
+  const W = w >> 2, H = h >> 2, o = new Float32Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++){
+    let s = 0; for (let j = 0; j < 4; j++){ const r = (y * 4 + j) * w + x * 4; s += g[r] + g[r + 1] + g[r + 2] + g[r + 3]; }
+    o[y * W + x] = s / 16; }
+  return {d: o, W, H};
+}
+function meanOf(a){ let s = 0; for (let i = 0; i < a.length; i++) s += a[i]; return s / a.length; }
+class Stabilizer {
+  constructor(refGray, w, h){ this.w = w; this.h = h; this.ref = refGray; this.refD = down4(refGray, w, h);
+    this.refMean = meanOf(refGray); this.refDMean = meanOf(this.refD.d); this.last = [0, 0]; }
+  // returns [dx,dy] with cur(x+dx,y+dy) ~ ref(x,y)
+  estimate(cur){
+    const {w, h} = this, cd = down4(cur, w, h), W = cd.W, H = cd.H;
+    const off = meanOf(cd.d) - this.refDMean;
+    let best = 1e18, bx = 0, by = 0; const R = 4, m = 8;
+    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++){
+      let s = 0;
+      for (let y = m; y < H - m; y += 1) { const ry = y * W, cy = (y + dy) * W;
+        for (let x = m; x < W - m; x += 1) s += Math.abs(cd.d[cy + x + dx] - off - this.refD.d[ry + x]); }
+      if (s < best){ best = s; bx = dx; by = dy; }
+    }
+    const offF = meanOf(cur) - this.refMean;
+    let fb = 1e18, fx = bx * 4, fy = by * 4; const cx = bx * 4, cy0 = by * 4, M = 24;
+    for (let dy = cy0 - 3; dy <= cy0 + 3; dy++) for (let dx = cx - 3; dx <= cx + 3; dx++){
+      let s = 0;
+      for (let y = M; y < h - M; y += 2){ const ry = y * w, yy = (y + dy) * w;
+        for (let x = M; x < w - M; x += 2) s += Math.abs(cur[yy + x + dx] - offF - this.ref[ry + x]); }
+      if (s < fb){ fb = s; fx = dx; fy = dy; }
+    }
+    if (Math.abs(fx) > 12 || Math.abs(fy) > 12) return this.last;   // glitch frame
+    this.last = [fx, fy]; return this.last;
+  }
+}
+
+/* ---------------------------------------------------------- background */
+function medianStack(stack, n){
+  const k = stack.length, out = new Uint8Array(n), tmp = new Uint8Array(k), mid = k >> 1;
+  for (let i = 0; i < n; i++){
+    for (let j = 0; j < k; j++){ const v = stack[j][i]; let p = j - 1;
+      while (p >= 0 && tmp[p] > v){ tmp[p + 1] = tmp[p]; p--; } tmp[p + 1] = v; }
+    out[i] = tmp[mid];
+  }
+  return out;
+}
+function darkMask(bg, w, h){           // static dark structures (house, pole, trees, roofs)
+  const sky = gaussBlur(bg, w, h, 12.5), p90 = percentile(bg, 0.9) * 0.75;
+  const m = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) m[i] = bg[i] < Math.min(sky[i] - 25, p90) ? 1 : 0;
+  return m;
+}
+
+// How much darker than the sky a pixel must be to count as part of a bat.
+// A bat's contrast falls as the sky darkens, so the cutoff is a share of the
+// local sky brightness (13.5% at normal sensitivity), but never below what the
+// video's own grain could produce.
+function thresholdMap(bg, mask, stack, n){
+  const dev = [];
+  for (let i = 0; i < n; i += 13){ if (mask[i]) continue; for (const g of stack) dev.push(Math.abs(g[i] - bg[i])); }
+  dev.sort((a, b) => a - b);
+  const sigma = dev.length ? 1.4826 * dev[dev.length >> 1] : 2;
+  const floor = Math.max(4, P.noiseK * sigma);
+  const thr = new Uint8Array(n);
+  for (let i = 0; i < n; i++) thr[i] = Math.min(P.maxThresh, Math.max(floor, Math.round(P.relThresh * bg[i])));
+  return thr;
+}
+class Backgrounds {
+  constructor(samples, w, h){ this.s = samples; this.w = w; this.h = h; this.cacheK = -1; }
+  index(t){ let best = 0, bd = 1e9; for (let k = 0; k < this.s.length; k++){ const d = Math.abs(this.s[k].t - t); if (d < bd){ bd = d; best = k; } } return best; }
+  getK(k){
+    if (k === this.cacheK) return this.cache;
+    const t = this.s[k].t, st = this.s.filter(s => Math.abs(s.t - t) <= P.bgWindowSec).map(s => s.g);
+    const bg = medianStack(st, this.w * this.h);
+    const mask = dilate(darkMask(bg, this.w, this.h), this.w, this.h, 2);
+    const thr = thresholdMap(bg, mask, st, this.w * this.h);
+    this.cacheK = k; this.cache = {bg, mask, thr}; return this.cache;
+  }
+  get(t){ return this.getK(this.index(t)); }
+}
+async function flickerMap(bgs, w, h, onProg){
+  // a representative sample of moments is plenty; pause between them so the
+  // page stays responsive on long videos
+  const acc = new Uint16Array(w * h), step = Math.max(1, Math.floor(bgs.s.length / 150));
+  let used = 0;
+  for (let k = 0; k < bgs.s.length; k += step){
+    const {bg, mask, thr} = bgs.getK(k), g = bgs.s[k].g;
+    for (let i = 0; i < w * h; i++) if (!mask[i] && bg[i] - g[i] > thr[i]) acc[i]++;
+    used++;
+    if (onProg) onProg(k / bgs.s.length);
+    await sleep(0);
+    if (S.stop) break;
+  }
+  const f = new Uint8Array(w * h), lim = P.flicker * used;
+  for (let i = 0; i < w * h; i++) f[i] = acc[i] > lim ? 1 : 0;
+  return dilate(f, w, h, 3);
+}
+
+/* ---------------------------------------------------------- house geometry */
+function houseGeometry(bg, w, h, box, poleLen){
+  const [x0, y0, x1, y1] = box.map(Math.round);
+  const dark = darkMask(bg, w, h);
+  let m = new Uint8Array(w * h);
+  for (let y = Math.max(0, y0); y < Math.min(h, y1); y++)
+    for (let x = Math.max(0, x0); x < Math.min(w, x1); x++) m[y * w + x] = dark[y * w + x];
+  m = erode(dilate(m, w, h, 2), w, h, 2);
+  // keep the biggest dark blob inside the box
+  const {comps, lab} = components(m, w, h, true);
+  if (!comps.length) return null;
+  let big = comps[0]; for (const c of comps) if (c.area > big.area) big = c;
+  for (let i = 0; i < w * h; i++) m[i] = lab[i] === big.id ? 1 : 0;
+  // fill holes (the house face can be lighter than its outline)
+  const outside = new Uint8Array(w * h), stack = [];
+  for (let x = 0; x < w; x++){ stack.push(x, (h - 1) * w + x); }
+  for (let y = 0; y < h; y++){ stack.push(y * w, y * w + w - 1); }
+  while (stack.length){ const i = stack.pop(); if (outside[i] || m[i]) continue; outside[i] = 1;
+    const x = i % w, y = (i / w) | 0;
+    if (x > 0) stack.push(i - 1); if (x < w - 1) stack.push(i + 1); if (y > 0) stack.push(i - w); if (y < h - 1) stack.push(i + w); }
+  for (let i = 0; i < w * h; i++) if (!outside[i]) m[i] = 1;
+  const houseOnly = m.slice();
+  // add the top of the pole the house sits on
+  if (poleLen > 0){
+    let bot = 0; for (let y = h - 1; y >= 0; y--){ let any = false; for (let x = 0; x < w; x++) if (m[y * w + x]){ any = true; break; } if (any){ bot = y; break; } }
+    const y2 = Math.min(h, bot + Math.round(poleLen));
+    const pm = m.slice();
+    for (let y = Math.max(0, bot - 3); y < y2; y++) for (let x = Math.max(0, x0); x < Math.min(w, x1); x++) if (dark[y * w + x]) pm[y * w + x] = 1;
+    const cc = components(pm, w, h, true);
+    let hid = 0; for (let x = 0; x < w; x++) if (m[bot * w + x]){ hid = cc.lab[bot * w + x]; break; }
+    if (hid) for (let i = 0; i < w * h; i++) if (cc.lab[i] === hid) m[i] = 1;
+  }
+  let roof = 0; for (let y = 0; y < h; y++){ let any = false; for (let x = 0; x < w; x++) if (m[y * w + x]){ any = true; break; } if (any){ roof = y; break; } }
+  return {mask: m, dist: edt(m, w, h), boxDist: edt(houseOnly, w, h), roof};
+}
+function bandMask(geo, w, h){
+  const b = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++){ const y = (i / w) | 0;
+    b[i] = !geo.mask[i] && geo.dist[i] <= (y < geo.roof + 3 ? P.topPortal : P.portal) ? 1 : 0; }
+  return b;
+}
+
+/* ---------------------------------------------------------- detection */
+function detect(ga, bg, mask, flick, w, h, thr){
+  let fg = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) fg[i] = (!mask[i] && !(flick && flick[i]) && bg[i] - ga[i] > thr[i]) ? 1 : 0;
+  fg = open2(fg, w, h);
+  fg = erode(dilate(fg, w, h, 2), w, h, 2);
+  const {comps} = components(fg, w, h, false);
+  const dets = [];
+  for (const c of comps) if (c.area >= P.minArea)
+    dets.push({x: c.sx / c.area, y: c.sy / c.area, a: c.area, box: [c.x0, c.y0, c.x1 - c.x0 + 1, c.y1 - c.y0 + 1]});
+  return dets;
+}
+
+/* ---------------------------------------------------------- tracking + counting */
+let TRACK_ID = 1;
+class Track {
+  constructor(d, f, dist, hd){
+    this.id = TRACK_ID++; this.pts = [[d.x, d.y]]; this.areas = [d.a]; this.dists = [dist]; this.hd = [hd];
+    this.d0 = dist; this.hd0 = hd; this.box = d.box; this.v = [0, 0]; this.last = f; this.missed = 0;
+    this.credited = 0; this.eligible = false; this.born = f; this.first = f; this.parent = null;
+    this.inherited = false; this.greenFrom = null;
+  }
+  predict(){ const p = this.pts[this.pts.length - 1]; return [p[0] + this.v[0] * (this.missed + 1), p[1] + this.v[1] * (this.missed + 1)]; }
+  update(d, f, dist, hd){
+    const p = this.pts[this.pts.length - 1], dt = Math.max(f - this.last, 1);
+    const nv = [(d.x - p[0]) / dt, (d.y - p[1]) / dt];
+    this.v = this.pts.length === 1 ? nv : [0.6 * nv[0] + 0.4 * this.v[0], 0.6 * nv[1] + 0.4 * this.v[1]];
+    this.pts.push([d.x, d.y]); this.areas.push(d.a); this.dists.push(dist); this.hd.push(hd);
+    this.box = d.box; this.last = f; this.missed = 0;
+  }
+}
+const median = a => { const s = a.slice().sort((x, y) => x - y); return s[s.length >> 1]; };
+function trackVelocity(t){
+  const n = t.pts.length, k = Math.min(n - 1, 4);
+  if (k < 1) return t.v.slice();
+  const a = t.pts[n - 1], b = t.pts[n - 1 - k], va = [(a[0] - b[0]) / k, (a[1] - b[1]) / k];
+  return Math.hypot(...va) > Math.hypot(...t.v) ? va : t.v.slice();
+}
+// how well a blob at (x,y) fits a bat last seen at (lx,ly) `age` frames ago
+function lostMatchCost(lx, ly, v, age, x, y){
+  age = Math.max(1, age);
+  const r = Math.min(P.reacqRadius, 12.5 + 5 * age), d = Math.hypot(x - lx, y - ly);
+  if (d <= r) return d;
+  const sp = Math.hypot(v[0], v[1]); if (sp < 1.5) return null;
+  const ux = v[0] / sp, uy = v[1] / sp, wx = x - lx, wy = y - ly;
+  const along = wx * ux + wy * uy, perp = Math.abs(wx * uy - wy * ux);
+  if (along > 0 && along <= 2 * sp * age + 30 && perp <= Math.min(40, 12.5 + 2 * age))
+    return perp + 0.1 * Math.abs(along - sp * age);
+  return null;
+}
+function greedyAssign(cost){            // cost: array of {a,b,c}
+  cost.sort((p, q) => p.c - q.c);
+  const ua = new Set(), ub = new Set(), out = [];
+  for (const e of cost){ if (ua.has(e.a) || ub.has(e.b)) continue; ua.add(e.a); ub.add(e.b); out.push(e); }
+  return out;
+}
+
+class Counter {
+  constructor(w, h, geo, fps){
+    this.w = w; this.h = h; this.geo = geo; this.fps = fps;
+    this.tracks = []; this.events = []; this.graveyard = []; this.drawlog = new Map();
+    this.gate = P.gate * (30 / fps); this.reacqFrames = Math.round(P.reacqSec * fps);
+    this.splitAge = Math.round(P.splitAgeSec * fps);
+  }
+  distAt(x, y){ const xi = Math.min(this.w - 1, Math.max(0, Math.round(x))), yi = Math.min(this.h - 1, Math.max(0, Math.round(y))); return this.geo.dist[yi * this.w + xi]; }
+  hdistAt(x, y){ const xi = Math.min(this.w - 1, Math.max(0, Math.round(x))), yi = Math.min(this.h - 1, Math.max(0, Math.round(y))); return this.geo.boxDist[yi * this.w + xi]; }
+  inBand(x, y, d){ return d <= (y < this.geo.roof + 3 ? P.topPortal : P.portal); }
+  uncount(t){ const k = this.events.findIndex(e => e.t === t && e.n > 0); if (k >= 0) this.events.splice(k, 1); t.credited = 0; t.greenFrom = null; }
+  handoff(t){
+    const [lx, ly] = t.pts[t.pts.length - 1], v = trackVelocity(t);
+    let best = null, bd = 1e9;
+    for (const c of this.tracks){
+      if (c === t || c.first < t.last - 1 || c.inherited) continue;
+      const cost = lostMatchCost(lx, ly, v, c.first - t.last, c.pts[0][0], c.pts[0][1]);
+      if (cost !== null && cost < bd){ best = c; bd = cost; }
+    }
+    if (!best) return false;
+    const c = best; c.inherited = true;
+    if (t.credited){ if (c.credited) this.uncount(c); c.credited = t.credited; c.greenFrom = c.first; c.eligible = t.eligible; c.parent = t.parent; }
+    else if (t.eligible || t.parent){ if (!c.credited){ c.eligible = t.eligible; c.parent = t.parent; c.d0 = t.d0; c.hd0 = t.hd0; } }
+    else { if (c.credited) this.uncount(c); c.eligible = false; c.parent = null; }
+    return true;
+  }
+  retire(t, f){
+    if (this.handoff(t)) return;
+    let ev = null; const [x, y] = t.pts[t.pts.length - 1];
+    if (t.pts.length >= P.minFrames && this.inBand(x, y, t.hd[t.hd.length - 1]) &&
+        Math.max(...t.hd) - t.hd[t.hd.length - 1] >= P.minTravel){
+      ev = {f, t, n: -1, how: 'return'}; this.events.push(ev);
+    }
+    if (t.pts.length >= 2)
+      this.graveyard.push({x, y, v: trackVelocity(t), frame: f - t.missed, ev, credited: t.credited,
+        eligible: t.eligible, parent: t.parent, d0: t.d0, hd0: t.hd0, born: t.born});
+  }
+  reacquired(x, y, f){
+    let best = null, bd = 1e9;
+    for (const g of this.graveyard){ const d = lostMatchCost(g.x, g.y, g.v, f - g.frame, x, y); if (d !== null && d < bd){ best = g; bd = d; } }
+    if (!best) return null;
+    this.graveyard.splice(this.graveyard.indexOf(best), 1);
+    if (best.ev){ const k = this.events.indexOf(best.ev); if (k >= 0) this.events.splice(k, 1); }
+    return best;
+  }
+  duplicateFrame(f){                    // a repeated frame: no time passes
+    for (const t of this.tracks){ if (t.last === f - 1) t.last = f; t.born++; t.first++; }
+    for (const g of this.graveyard) g.frame++;
+    this.log(f);
+  }
+  step(f, dets){
+    const tracks = this.tracks, matched = new Set();
+    // 1. main association on predicted position
+    if (tracks.length && dets.length){
+      const cost = [];
+      tracks.forEach((t, a) => {
+        const [px, py] = t.predict();
+        const g = this.gate + Math.hypot(t.v[0], t.v[1]) + 0.5 * Math.sqrt(median(t.areas.slice(-5))) + (t.pts.length === 1 ? P.newGate : 0);
+        dets.forEach((d, b) => { const c = Math.hypot(d.x - px, d.y - py); if (c <= g) cost.push({a, b, c}); });
+      });
+      for (const e of greedyAssign(cost)){ const d = dets[e.b]; tracks[e.a].update(d, f, this.distAt(d.x, d.y), this.hdistAt(d.x, d.y)); matched.add(e.b); }
+    }
+    for (const t of tracks) if (t.last !== f) t.missed++;
+    // 2. second chance for bats missing a frame or two
+    const U = dets.map((d, k) => k).filter(k => !matched.has(k)), L = tracks.filter(t => t.last !== f);
+    if (U.length && L.length){
+      const cost = [];
+      L.forEach((t, a) => { const [lx, ly] = t.pts[t.pts.length - 1], v = trackVelocity(t);
+        U.forEach((k, b) => { const c = lostMatchCost(lx, ly, v, f - t.last, dets[k].x, dets[k].y); if (c !== null) cost.push({a, b, c}); }); });
+      for (const e of greedyAssign(cost)){ const k = U[e.b], d = dets[k]; L[e.a].update(d, f, this.distAt(d.x, d.y), this.hdistAt(d.x, d.y)); matched.add(k); }
+    }
+    this.graveyard = this.graveyard.filter(g => f - g.frame <= this.reacqFrames);
+    // 3. new tracks
+    const seen = tracks.filter(t => t.last === f && t.pts.length > 1);
+    const parents = seen.filter(t => (t.eligible || t.parent) && f - t.born <= this.splitAge);
+    dets.forEach((d, k) => {
+      if (matched.has(k)) return;
+      const t = new Track(d, f, this.distAt(d.x, d.y), this.hdistAt(d.x, d.y));
+      const e = this.reacquired(d.x, d.y, f);
+      if (e){
+        t.inherited = true; t.credited = e.credited; if (t.credited) t.greenFrom = f;
+        t.eligible = e.eligible; t.parent = e.parent; t.d0 = e.d0; t.hd0 = e.hd0; t.born = e.born; t.v = e.v.slice();
+      } else if (this.inBand(d.x, d.y, t.dists[0])){
+        const lim = t.hd[0] > P.portal ? P.poleCrowd : P.crowd; let near = null, nd = lim;
+        for (const p of seen){ const q = p.pts[p.pts.length - 1], dd = Math.hypot(d.x - q[0], d.y - q[1]); if (dd < nd){ near = p; nd = dd; } }
+        if (near) t.parent = near; else t.eligible = true;
+      } else {
+        let best = null, bd = 1e9;
+        for (const p of parents){ const q = p.pts[p.pts.length - 1], rr = P.splitRadius + 1.5 * Math.hypot(p.v[0], p.v[1]), dd = Math.hypot(d.x - q[0], d.y - q[1]); if (dd <= rr && dd < bd){ best = p; bd = dd; } }
+        if (best) t.parent = best;
+      }
+      tracks.push(t);
+    });
+    // 4. exits
+    for (const t of tracks){
+      if (t.last !== f || t.credited || t.pts.length < P.minFrames) continue;
+      if (t.eligible){
+        if (t.dists[t.dists.length - 1] - t.d0 < P.minTravel && t.hd[t.hd.length - 1] - t.hd0 < P.minTravel) continue;
+      } else if (t.parent){
+        const p = t.parent;
+        if (t.pts.length < P.splitFrames || p.last !== f) continue;
+        const a = t.pts[t.pts.length - 1], b = p.pts[p.pts.length - 1];
+        if (Math.hypot(a[0] - b[0], a[1] - b[1]) < P.splitSep || median(t.areas) < P.splitMinArea) continue;
+      } else continue;
+      t.credited = 1; t.greenFrom = f;
+      this.events.push({f, t, n: 1, how: t.parent ? 'split' : 'house'});
+    }
+    // 5. lost tracks
+    const keep = [];
+    for (const t of tracks){ if (t.missed > P.maxMissed) this.retire(t, f); else keep.push(t); }
+    this.tracks = keep;
+    this.log(f);
+  }
+  log(f){
+    this.drawlog.set(f, this.tracks.filter(t => t.last === f).map(t => [t, t.box.slice(), t.pts.slice(-15).map(p => [p[0], p[1]])]));
+  }
+  finish(f){ for (const t of this.tracks.slice()){ this.tracks.splice(this.tracks.indexOf(t), 1); this.retire(t, f); } }
+  exitsSoFar(){ let n = 0; for (const e of this.events) if (e.n > 0) n++; return n; }
+}
+
+
+/* ---------------------------------------------------------- bunched bats
+   Right at the exit every bat is about the same distance from the camera, so a
+   blob much bigger than a typical single bat leaving the house is several bats
+   flying out together. Done after tracking, once the typical size is known. */
+function clumpAdjust(ctr){
+  const near = t => { const a = [];
+    for (let i = 0; i < t.areas.length && a.length < 6; i++) if (t.dists[i] <= 2 * P.portal) a.push(t.areas[i]);
+    return a.length >= 2 ? median(a) : null; };
+  const house = ctr.events.filter(e => e.n > 0 && e.how === 'house');
+  const sizes = house.map(e => near(e.t)).filter(v => v);
+  if (sizes.length < 15) return {single: null, extra: 0};
+  const single = median(sizes);
+  // a bat flying close to the camera also looks big, but it crosses the
+  // picture much faster than bats that are just dropping out of the house
+  const speed = t => { const k = Math.min(t.pts.length - 1, 4);
+    return k ? Math.hypot(t.pts[k][0] - t.pts[0][0], t.pts[k][1] - t.pts[0][1]) / k : 0; };
+  const typSpeed = median(house.map(e => speed(e.t)));
+  let extra = 0;
+  if (window.__clumpDbg !== undefined) window.__clumpDbg = house.map(e => { const t = e.t, k = Math.min(t.pts.length - 1, 4);
+    const sp = k ? Math.hypot(t.pts[k][0] - t.pts[0][0], t.pts[k][1] - t.pts[0][1]) / k : 0;
+    return {f: e.f, id: t.id, area: near(t), sp: +sp.toFixed(1), d0: +t.d0.toFixed(1), y0: Math.round(t.pts[0][1]), x0: Math.round(t.pts[0][0]), hd0: +t.hd0.toFixed(1), n: t.pts.length}; });
+  for (const e of house){
+    const a = near(e.t);
+    if (a && a >= P.clumpFactor * single && speed(e.t) <= 1.4 * typSpeed){
+      const nb = Math.min(4, Math.round(a / single));
+      if (nb > 1){ e.n = nb; e.t.reserve = nb - 1; e.how = 'house x' + nb; extra += nb - 1; }
+    }
+  }
+  // a bat that later separates from a counted bunch was already counted with it
+  const splits = ctr.events.filter(e => e.n > 0 && e.how === 'split').sort((a, b) => a.f - b.f);
+  for (const e of splits){
+    let p = e.t.parent, hops = 0;
+    while (p && !(p.reserve > 0) && p.parent && hops++ < 5) p = p.parent;
+    if (p && p.reserve > 0){ p.reserve--; e.n = 0; extra--; }
+  }
+  ctr.events = ctr.events.filter(e => e.n !== 0);
+  return {single, extra};
+}
+
+/* ---------------------------------------------------------- video helpers */
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function once(el, ev){ return new Promise(r => el.addEventListener(ev, r, {once: true})); }
+async function seek(v, t){ v.currentTime = t; await once(v, 'seeked'); }
+async function loadVideo(v, url){
+  v.src = url; v.load();
+  await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error('load failed')); });
+}
+function readAsDataURL(f){
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(f); });
+}
+// Load a local file into the working <video>. Some embedded previews and
+// sandboxed frames block "blob:" video URLs, so fall back to a data: URL.
+async function loadLocalVideo(v, f){
+  const blobUrl = URL.createObjectURL(f);
+  try { await loadVideo(v, blobUrl); return blobUrl; }
+  catch(e){ URL.revokeObjectURL(blobUrl); }
+  if (f.size < 400 * 1024 * 1024){
+    try { const d = await readAsDataURL(f); await loadVideo(v, d); return d; } catch(e){}
+  }
+  const t = (f.type || '').toLowerCase();
+  const playable = t && v.canPlayType(t) !== '';
+  throw new Error(playable
+    ? 'Your browser can normally play this video, but this window is blocking local videos (this happens in some ' +
+      'embedded previews). Open the page directly instead: save bat-counter.html and double-click it, or use it from your website.'
+    : 'This browser can\u2019t play that video format. Try Chrome, Edge or Safari, or convert the video to MP4 (H.264).');
+}
+async function probeFps(v){
+  await seek(v, 0);
+  const times = [];
+  await new Promise(res => {
+    const cb = (now, md) => { times.push(md.mediaTime); if (times.length < 12) v.requestVideoFrameCallback(cb); else { v.pause(); res(); } };
+    v.requestVideoFrameCallback(cb); v.play();
+  });
+  const d = []; for (let i = 1; i < times.length; i++) if (times[i] > times[i - 1]) d.push(times[i] - times[i - 1]);
+  const fps = d.length ? 1 / median(d) : 30;
+  return Math.min(120, Math.max(10, Math.round(fps * 100) / 100));
+}
+
+/* ---------------------------------------------------------- app state */
+const S = {file: null, url: null, vw: 0, vh: 0, aw: 0, ah: AH, box: null, previewGray: null, geoPreview: null, running: false, stop: false};
+const work = $('workVideo'), rec = $('recVideo');
+const aCanvas = document.createElement('canvas'); const aCtx = aCanvas.getContext('2d', {willReadFrequently: true});
+function grabGray(v){ aCtx.drawImage(v, 0, 0, S.aw, S.ah); return toGray(aCtx.getImageData(0, 0, S.aw, S.ah).data, S.aw * S.ah); }
+
+// theme toggle
+(function(){
+  const btn = $('themeBtn'); let t = null;
+  try { t = localStorage.getItem('batTheme'); } catch(e){}
+  const apply = th => { document.documentElement.dataset.theme = th; btn.textContent = th === 'light' ? 'Dark' : 'Light'; };
+  apply(t || 'dark');
+  btn.onclick = () => { const n = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'; apply(n); try { localStorage.setItem('batTheme', n); } catch(e){} };
+})();
+
+/* ---------------------------------------------------------- step 1: load */
+const drop = $('drop');
+['dragover', 'dragenter'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', ev => { const f = ev.dataTransfer.files[0]; if (f) openFile(f); });
+$('file').addEventListener('change', ev => { const f = ev.target.files[0]; if (f) openFile(f); });
+
+async function openFile(f){
+  $('loadErr').classList.add('hidden');
+  if (!('requestVideoFrameCallback' in HTMLVideoElement.prototype)){
+    showErr('loadErr', 'This browser is too old for the counter. Please use a current Chrome, Edge, Firefox or Safari.'); return;
+  }
+  try {
+    if (S.url && S.url.startsWith('blob:')) URL.revokeObjectURL(S.url);
+    S.file = f; S.url = null;
+    $('drop').querySelector('strong').textContent = 'Loading ' + f.name + '\u2026';
+    S.url = await loadLocalVideo(work, f);
+    S.vw = work.videoWidth; S.vh = work.videoHeight;
+    S.ah = AH; S.aw = Math.round(S.vw * AH / S.vh);
+    aCanvas.width = S.aw; aCanvas.height = S.ah;
+    await seek(work, Math.min(1, work.duration / 2));
+    S.previewGray = grabGray(work);
+    S.box = null; S.geoPreview = null;
+    $('cardBox').classList.remove('hidden'); $('cardRun').classList.remove('hidden');
+    $('cardResult').classList.add('hidden');
+    $('drop').querySelector('strong').textContent = f.name;
+    setupBoxCanvas();
+    $('runBtn').disabled = true;
+    $('cardBox').scrollIntoView({behavior: 'smooth', block: 'start'});
+  } catch(e){
+    $('drop').querySelector('strong').textContent = 'Tap to choose a video';
+    showErr('loadErr', e.message || String(e));
+  }
+}
+function showErr(id, msg){ const el = $(id); el.textContent = msg; el.classList.remove('hidden'); }
+
+/* ---------------------------------------------------------- step 2: box */
+const boxC = $('boxCanvas'), boxX = boxC.getContext('2d');
+let drag = null;
+function setupBoxCanvas(){
+  const scale = Math.min(1, 1100 / Math.max(S.vw, S.vh));
+  boxC.width = Math.round(S.vw * scale); boxC.height = Math.round(S.vh * scale);
+  drawBox();
+}
+function drawBox(tmp){
+  boxX.drawImage(work, 0, 0, boxC.width, boxC.height);
+  const k = boxC.width / S.aw;
+  if (S.geoPreview){
+    const {mask} = S.geoPreview, band = bandMask(S.geoPreview, S.aw, S.ah);
+    const img = boxX.getImageData(0, 0, boxC.width, boxC.height), d = img.data;
+    for (let y = 0; y < boxC.height; y++) for (let x = 0; x < boxC.width; x++){
+      const ai = ((y / k) | 0) * S.aw + ((x / k) | 0), j = (y * boxC.width + x) * 4;
+      if (mask[ai]){ d[j] = d[j] * .45 + 76 * .55; d[j + 1] = d[j + 1] * .45 + 141 * .55; d[j + 2] = d[j + 2] * .45 + 255 * .55; }
+      else if (band[ai]){ d[j] = d[j] * .5 + 242 * .5; d[j + 1] = d[j + 1] * .5 + 165 * .5; d[j + 2] = d[j + 2] * .5 + 65 * .5; }
+    }
+    boxX.putImageData(img, 0, 0);
+  }
+  const b = tmp || (S.box && S.box.map(v => v * k));
+  if (b){ boxX.strokeStyle = '#ff4d4d'; boxX.lineWidth = Math.max(2, boxC.width / 300);
+    boxX.strokeRect(b[0], b[1], b[2] - b[0], b[3] - b[1]); }
+}
+function canvasPt(ev){ const r = boxC.getBoundingClientRect(); return [(ev.clientX - r.left) * boxC.width / r.width, (ev.clientY - r.top) * boxC.height / r.height]; }
+boxC.addEventListener('pointerdown', ev => { if (S.running) return; boxC.setPointerCapture(ev.pointerId); drag = canvasPt(ev); });
+boxC.addEventListener('pointermove', ev => { if (!drag) return; const p = canvasPt(ev);
+  drawBox([Math.min(drag[0], p[0]), Math.min(drag[1], p[1]), Math.max(drag[0], p[0]), Math.max(drag[1], p[1])]); });
+boxC.addEventListener('pointerup', ev => {
+  if (!drag) return; const p = canvasPt(ev), k = boxC.width / S.aw;
+  const b = [Math.min(drag[0], p[0]), Math.min(drag[1], p[1]), Math.max(drag[0], p[0]), Math.max(drag[1], p[1])].map(v => v / k);
+  drag = null;
+  if (b[2] - b[0] < 8 || b[3] - b[1] < 8){ drawBox(); return; }
+  setHouseBox(b);
+});
+function setHouseBox(b){
+  S.box = b;
+  S.geoPreview = houseGeometry(S.previewGray, S.aw, S.ah, b, P.poleLen);
+  drawBox();
+  $('runBtn').disabled = !S.geoPreview;
+}
+window.setHouseBox = setHouseBox;          // for scripted testing
+
+/* ---------------------------------------------------------- step 3: run */
+const SENS_NAMES = {1: 'lowest', 4: 'low', 7: 'normal', 9: 'high', 10: 'highest'};
+$('optSens').addEventListener('input', e => { const v = +e.target.value; $('sensOut').textContent = v + (SENS_NAMES[v] ? ` (${SENS_NAMES[v]})` : ''); });
+// sensitivity 1..10 -> darkness threshold (lower = fainter bats) and smallest blob size
+function applySensitivity(v){
+  const mult = v <= 7 ? 1 + (7 - v) * 0.12 : 1 - (v - 7) * 0.13;   // 1 -> 1.72x, 7 -> 1x, 10 -> 0.61x
+  P.relThresh = 0.135 * mult; P.noiseK = 3.5 * Math.min(1, mult);
+  P.minArea = v <= 7 ? 10 : Math.max(5, Math.round(10 - 1.7 * (v - 7)));   // 10 -> 5
+  P.splitMinArea = Math.max(8, P.minArea * 1.5);
+}
+$('runBtn').addEventListener('click', () => run().catch(err => { console.error(err); showErr('runErr', 'Something went wrong: ' + (err.message || err)); finishUI(); }));
+$('stopBtn').addEventListener('click', () => { S.stop = true; });
+function setProg(frac, txt){ $('progBar').style.width = (100 * Math.max(0, Math.min(1, frac))).toFixed(1) + '%'; if (txt) $('stageTxt').textContent = txt; }
+function finishUI(){ S.running = false; $('runBtn').disabled = false; $('stopBtn').classList.add('hidden'); }
+
+let audioCtx = null;
+async function run(){
+  if (!S.box) return;
+  S.running = true; S.stop = false; $('runErr').classList.add('hidden');
+  $('runBtn').disabled = true; $('stopBtn').classList.remove('hidden'); $('progWrap').classList.remove('hidden');
+  $('cardResult').classList.add('hidden');
+  applySensitivity(+$('optSens').value); P.net = $('optNet').checked;
+  const showBoxes = $('optBoxes').checked;
+  // audio graph must be created inside the click
+  try { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume(); } catch(e){ audioCtx = null; }
+  TRACK_ID = 1;
+  const w = S.aw, h = S.ah, dur = work.duration;
+
+  // frame-exact decoding when the browser and file allow it
+  let dm = null;
+  if ('VideoDecoder' in window && 'EncodedVideoChunk' in window){
+    try {
+      dm = await demuxVideo(S.file);
+      if (dm){
+        const rw = dm.rotation % 180 ? dm.config.codedHeight : dm.config.codedWidth;
+        const rh = dm.rotation % 180 ? dm.config.codedWidth : dm.config.codedHeight;
+        if (Math.abs(rw / rh - S.vw / S.vh) > 0.02) dm = null;     // unexpected geometry: play instead
+      }
+    } catch(e){ console.warn('direct decoding unavailable', e); dm = null; }
+  }
+  let lumaOK = true;
+  const grabFrame = async fr => {
+    if (lumaOK){ const g = await lumaFromFrame(fr, w, h, dm.rotation); if (g) return g; lumaOK = false; }
+    drawUpright(aCtx, fr, w, h, dm.rotation); return toGray(aCtx.getImageData(0, 0, w, h).data, w * h);
+  };
+
+  // ---- pass 1: background samples (every 0.5 s)
+  setProg(0, 'Step 1 of 3: learning the sky background…');
+  let stab = null; const samples = [];
+  if (dm){
+    const every = Math.max(1, Math.round(dm.fps * P.bgStepSec));
+    await decodeAll(dm, S.file, async (i, t, fr) => {
+      if (i % every) return;
+      const g = await grabFrame(fr);
+      if (!stab) stab = new Stabilizer(g, w, h);
+      const [dx, dy] = stab.estimate(g);
+      samples.push({t, g: shiftImg(g, w, h, dx, dy, Math.round(meanOf(g)))});
+      setProg(0.1 * i / dm.count);
+    });
+  } else {
+    await seek(work, 0);
+    stab = new Stabilizer(grabGray(work), w, h);
+    for (let t = 0; t < dur; t += P.bgStepSec){
+      if (S.stop) return stopped();
+      await seek(work, t);
+      const g = grabGray(work), [dx, dy] = stab.estimate(g);
+      samples.push({t, g: shiftImg(g, w, h, dx, dy, Math.round(meanOf(g)))});
+      setProg(0.1 * t / dur);
+    }
+  }
+  if (S.stop || !samples.length) return stopped();
+  const bgs = new Backgrounds(samples, w, h);
+  setProg(0.1, 'Step 1 of 3: finding swaying leaves…'); await sleep(20);
+  const geo = houseGeometry(bgs.getK(0).bg, w, h, S.box, P.poleLen) || S.geoPreview;
+  let flick = await flickerMap(bgs, w, h, fr => setProg(0.1 + 0.02 * fr));
+  for (let i = 0; i < w * h; i++) if (geo.dist[i] <= P.portal * 2) flick[i] = 0;
+
+  // ---- pass 2: detect + track every frame
+  setProg(0.12, 'Step 2 of 3: tracking bats…');
+  const fps = dm ? dm.fps : await probeFps(work);
+  const N = dm ? dm.count : Math.floor(dur * fps);
+  const ctr = new Counter(w, h, geo, fps);
+  const shifts = new Map();
+  const live = $('liveCanvas'), lx = live.getContext('2d');
+  live.width = Math.round(w * 1.2); live.height = Math.round(h * 1.2);
+  let prevG = null, lastF = -1, frames = 0;
+  const processFrame = (f, t, g, drawLive) => {
+    lastF = f; frames++;
+    let dup = false;
+    // a true repeat is (nearly) identical everywhere; a smooth, still sky can
+    // change very little on average between real frames, so count how many
+    // pixels changed noticeably instead of averaging
+    if (prevG){ let c = 0, n = 0; for (let i = 0; i < g.length; i += 7){ n++; if (Math.abs(g[i] - prevG[i]) > 8) c++; } dup = c / n < P.dupThresh; }
+    prevG = g;
+    if (dup){ ctr.duplicateFrame(f); shifts.set(f, shifts.get(f - 1) || [0, 0]); }
+    else {
+      const [dx, dy] = stab.estimate(g); shifts.set(f, [dx, dy]);
+      const ga = shiftImg(g, w, h, dx, dy, 255), {bg, mask, thr} = bgs.get(t);
+      const dets = detect(ga, bg, mask, flick, w, h, thr);
+      if (window.__trace) window.__trace.push({f, t, dx, dy, n: dets.length});
+      ctr.step(f, dets);
+    }
+    if (frames % 3 === 0){
+      drawLive(lx, live.width, live.height);
+      drawOverlay(lx, ctr.drawlog.get(f) || [], f, live.width / w, shifts.get(f), true, geo);
+      setProg(0.12 + 0.48 * f / N);
+      $('liveCount').textContent = ctr.exitsSoFar() + ' bats so far';
+    }
+  };
+  if (dm){
+    await decodeAll(dm, S.file, async (i, t, fr) => processFrame(i, t, await grabFrame(fr), (x, W_, H_) => drawUpright(x, fr, W_, H_, dm.rotation)));
+  } else {
+    // fallback: play the video and grab frames as they are shown (pausing for
+    // each one); a slow computer may still skip a few frames this way
+    await seek(work, 0);
+    work.playbackRate = 1;
+    await new Promise((resolve) => {
+      const cb = async (now, md) => {
+        if (S.stop){ work.pause(); resolve(); return; }
+        const f = Math.round(md.mediaTime * fps);
+        if (f > lastF){
+          work.pause();
+          processFrame(f, md.mediaTime, grabGray(work), (x, W_, H_) => x.drawImage(work, 0, 0, W_, H_));
+        }
+        if (work.ended || md.mediaTime >= dur - 0.5 / fps){ resolve(); return; }
+        work.requestVideoFrameCallback(cb);
+        await work.play();
+      };
+      work.onended = () => resolve();
+      work.requestVideoFrameCallback(cb);
+      work.play();
+    });
+    work.pause(); work.onended = null;
+  }
+  if (S.stop) return stopped();
+  ctr.finish(lastF + 1);
+  const drops = 0;
+
+  // bats that left in a tight bunch look like one blob: count them by size
+  const clumpInfo = clumpAdjust(ctr);
+  // final tallies (after all corrections), per frame
+  const events = ctr.events.slice().sort((a, b) => a.f - b.f);
+  const exits = events.filter(e => e.n > 0).reduce((a, e) => a + e.n, 0), returns = -events.filter(e => e.n < 0).reduce((a, e) => a + e.n, 0);
+  const tallyAt = new Int32Array(lastF + 2);
+  for (const e of events) if (e.n > 0 || P.net) tallyAt[Math.min(e.f, lastF + 1)] += e.n;
+  for (let i = 1; i < tallyAt.length; i++) tallyAt[i] += tallyAt[i - 1];
+  for (let i = 0; i < tallyAt.length; i++) if (tallyAt[i] < 0) tallyAt[i] = 0;
+  const finalCount = P.net ? Math.max(0, exits - returns) : exits;
+
+  // csv
+  let csv = 'frame,time_s,track_id,change,how,exits,returns,net\n', e_ = 0, r_ = 0;
+  for (const e of events){ if (e.n > 0) e_ += e.n; else r_ -= e.n; csv += `${e.f},${(e.f / fps).toFixed(2)},${e.t.id},${e.n},${e.how},${e_},${r_},${e_ - r_}\n`; }
+  window.__result = {exits, returns, finalCount, fps, drops, exact: !!dm, luma: dm ? lumaOK : false, frames, clumps: clumpInfo};
+  window.__events = events.map(e => ({f: e.f, n: e.n, how: e.how, id: e.t.id, x: Math.round(e.t.pts[0][0]), y: Math.round(e.t.pts[0][1])}));
+
+  // ---- pass 3: record output video in real time
+  setProg(0.6, 'Step 3 of 3: making your video…');
+  $('liveCount').textContent = finalCount + ' bats';
+  let blob = null;
+  try { blob = await encodeOutput(fps, tallyAt, ctr.drawlog, shifts, showBoxes, geo, dur, dm); }
+  catch(e){ console.warn('frame-by-frame encoding failed, recording instead', e); blob = null; }
+  if (!blob && !S.stop) blob = await recordOutput(fps, tallyAt, ctr.drawlog, shifts, showBoxes, geo, dur);
+  if (!blob) return stopped();
+
+  // ---- results
+  const outUrl = URL.createObjectURL(blob);
+  $('outVideo').src = outUrl;
+  const ext = blob.type.includes('mp4') ? 'mp4' : 'webm';
+  const base = (S.file.name.replace(/\.[^.]+$/, '') || 'bats') + '_counted';
+  $('dlVideo').href = outUrl; $('dlVideo').download = base + '.' + ext;
+  $('dlCsv').href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'})); $('dlCsv').download = base + '_events.csv';
+  $('finalCount').textContent = finalCount + (finalCount === 1 ? ' Bat' : ' Bats');
+  const how = dm ? `All ${frames} frames analysed.` : 'Analysed by playing the video (this browser can\u2019t decode it frame by frame; a few frames may be skipped).';
+  $('finalDetail').textContent = (P.net
+    ? `${exits} seen leaving, ${returns} seen flying back in. `
+    : `${exits} seen leaving. `) + how + ` Sensitivity ${$('optSens').value}.`;
+  $('cardResult').classList.remove('hidden');
+  setProg(1, 'Done.');
+  window.__result.blobType = blob.type; window.__result.blobSize = blob.size; window.__done = true;
+  finishUI();
+  $('cardResult').scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+function stopped(){ setProg(0, 'Stopped.'); work.pause(); try { rec.pause(); } catch(e){} finishUI(); }
+
+function drawOverlay(ctx, entries, f, k, shift, withBand, geo){
+  const [dx, dy] = shift || [0, 0];
+  ctx.lineWidth = Math.max(1, k * 0.9);
+  for (const [t, b, tail] of entries){
+    const col = (t.greenFrom !== null && f >= t.greenFrom) ? '#3ee06a' : ((t.eligible || t.parent) ? '#f2a541' : '#a0a0a0');
+    ctx.strokeStyle = col;
+    ctx.strokeRect((b[0] + dx) * k, (b[1] + dy) * k, b[2] * k, b[3] * k);
+    ctx.beginPath();
+    tail.forEach((p, j) => { const X = (p[0] + dx) * k, Y = (p[1] + dy) * k; j ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); });
+    ctx.stroke();
+  }
+}
+
+function bandOutlinePath(geo, w, h){
+  // simple outline: draw band edge pixels
+  const band = bandMask(geo, w, h), pts = [];
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++){ const i = y * w + x;
+    if (band[i] && (!band[i - 1] && !geo.mask[i - 1] || !band[i + 1] && !geo.mask[i + 1] || !band[i - w] && !geo.mask[i - w] || !band[i + w] && !geo.mask[i + w])) pts.push(x, y); }
+  return pts;
+}
+
+
+/* ---------------------------------------------------------- MP4 writing
+   The output is encoded frame by frame with WebCodecs and packed into an MP4
+   here, so every frame gets its exact timestamp no matter how fast the
+   computer is. The original audio is copied over from the source file
+   untouched (no re-encoding). */
+function u32(n){ return [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255]; }
+function u16(n){ return [(n >> 8) & 255, n & 255]; }
+function u64(n){ const hi = Math.floor(n / 4294967296), lo = n >>> 0; return [...u32(hi), ...u32(lo)]; }
+function str4(t){ return [...t].map(c => c.charCodeAt(0)); }
+function box(type, ...parts){
+  const body = []; let len = 8;
+  for (const p of parts){ const a = p instanceof Uint8Array ? p : Uint8Array.from(p); body.push(a); len += a.length; }
+  const out = new Uint8Array(len); out.set([...u32(len), ...str4(type)], 0);
+  let o = 8; for (const a of body){ out.set(a, o); o += a.length; }
+  return out;
+}
+function fullbox(type, version, flags, ...parts){ return box(type, [version, (flags >> 16) & 255, (flags >> 8) & 255, flags & 255], ...parts); }
+const MATRIX = [...u32(0x00010000), ...u32(0), ...u32(0), ...u32(0), ...u32(0x00010000), ...u32(0), ...u32(0), ...u32(0), ...u32(0x40000000)];
+
+function sttsEntries(durs){
+  const e = []; for (const d of durs){ if (e.length && e[e.length - 1][1] === d) e[e.length - 1][0]++; else e.push([1, d]); }
+  return e;
+}
+function trackBox({id, handler, timescale, durs, sizes, chunkOffset, stsdEntry, keyIdx, ctts, width, height, movieDurMs}){
+  const mediaDur = durs.reduce((a, b) => a + b, 0);
+  const isVid = handler === 'vide';
+  const tkhd = fullbox('tkhd', 0, 3, u32(0), u32(0), u32(id), u32(0), u32(movieDurMs), u32(0), u32(0),
+    u16(0), u16(0), u16(isVid ? 0 : 0x0100), u16(0), MATRIX, u32((width || 0) * 65536), u32((height || 0) * 65536));
+  const mdhd = fullbox('mdhd', 0, 0, u32(0), u32(0), u32(timescale), u32(mediaDur), u16(0x55c4), u16(0));
+  const name = isVid ? 'VideoHandler' : 'SoundHandler';
+  const hdlr = fullbox('hdlr', 0, 0, u32(0), str4(handler), u32(0), u32(0), u32(0), [...str4(name), 0]);
+  const mhd = isVid ? fullbox('vmhd', 0, 1, u16(0), u16(0), u16(0), u16(0)) : fullbox('smhd', 0, 0, u16(0), u16(0));
+  const dinf = box('dinf', fullbox('dref', 0, 0, u32(1), fullbox('url ', 0, 1)));
+  const se = sttsEntries(durs);
+  const stts = fullbox('stts', 0, 0, u32(se.length), ...se.map(([c, d]) => [...u32(c), ...u32(d)]));
+  const stsz = fullbox('stsz', 0, 0, u32(0), u32(sizes.length), ...sizes.map(z => u32(z)));
+  const stsc = fullbox('stsc', 0, 0, u32(1), u32(1), u32(sizes.length), u32(1));   // one chunk
+  const stco = chunkOffset > 4294967295 ? fullbox('co64', 0, 0, u32(1), u64(chunkOffset)) : fullbox('stco', 0, 0, u32(1), u32(chunkOffset));
+  const parts = [fullbox('stsd', 0, 0, u32(1), stsdEntry), stts];
+  if (ctts) parts.push(fullbox('ctts', 1, 0, u32(ctts.length), ...ctts.map(([c, o]) => [...u32(c), ...u32(o)])));
+  if (keyIdx) parts.push(fullbox('stss', 0, 0, u32(keyIdx.length), ...keyIdx.map(i => u32(i + 1))));
+  parts.push(stsc, stsz, stco);
+  const stbl = box('stbl', ...parts);
+  return box('trak', tkhd, box('mdia', mdhd, hdlr, box('minf', mhd, dinf, stbl)));
+}
+function avc1Entry(w, h, avcC){
+  const name = new Uint8Array(32);
+  return box('avc1', [0, 0, 0, 0, 0, 0], u16(1), u16(0), u16(0), new Uint8Array(12), u16(w), u16(h),
+    u32(0x00480000), u32(0x00480000), u32(0), u16(1), name, u16(0x0018), u16(0xffff), box('avcC', avcC));
+}
+function buildMp4(video, audio){
+  // video: {samples:[{b,ts(us),key}], avcC, w, h, fps}; audio: {entry, timescale, durs, samples:[Uint8Array]} | null
+  const VTS = 90000;
+  // decode order is the order chunks came out; presentation times may be reordered (B-frames)
+  const pts = video.samples.map(s => Math.round(s.ts * VTS / 1e6));
+  const sorted = pts.slice().sort((a, b) => a - b);
+  let shift = 0; for (let i = 0; i < pts.length; i++) shift = Math.max(shift, sorted[i] - pts[i]);
+  const dts = sorted.map(v => v - shift);
+  const vd = []; for (let i = 0; i < dts.length; i++) vd.push(i < dts.length - 1 ? Math.max(1, dts[i + 1] - dts[i]) : Math.round(VTS / video.fps));
+  const offs = pts.map((p, i) => p - dts[i]);
+  const ctts = offs.some(o => o !== 0) ? sttsEntries(offs) : null;
+  const vsizes = video.samples.map(s => s.b.length), vkeys = [];
+  video.samples.forEach((s, i) => { if (s.key) vkeys.push(i); });
+  const vbytes = vsizes.reduce((a, b) => a + b, 0);
+  const abytes = audio ? audio.samples.reduce((a, b) => a + b.length, 0) : 0;
+  const ftyp = box('ftyp', str4('isom'), u32(512), str4('isom'), str4('iso2'), str4('avc1'), str4('mp41'));
+  const mdatSize = 16 + vbytes + abytes;                       // 64-bit size header
+  const mdatHdr = Uint8Array.from([...u32(1), ...str4('mdat'), ...u64(mdatSize)]);
+  const vOff = ftyp.length + 16, aOff = vOff + vbytes;
+  const vDurMs = Math.round(vd.reduce((a, b) => a + b, 0) / VTS * 1000);
+  const aDurMs = audio ? Math.round(audio.durs.reduce((a, b) => a + b, 0) / audio.timescale * 1000) : 0;
+  const movieMs = Math.max(vDurMs, aDurMs);
+  const traks = [trackBox({id: 1, handler: 'vide', timescale: VTS, durs: vd, sizes: vsizes, chunkOffset: vOff,
+    stsdEntry: avc1Entry(video.w, video.h, video.avcC), keyIdx: vkeys, ctts, width: video.w, height: video.h, movieDurMs: vDurMs})];
+  if (audio) traks.push(trackBox({id: 2, handler: 'soun', timescale: audio.timescale, durs: audio.durs,
+    sizes: audio.samples.map(a => a.length), chunkOffset: aOff, stsdEntry: audio.entry, movieDurMs: aDurMs}));
+  const mvhd = fullbox('mvhd', 0, 0, u32(0), u32(0), u32(1000), u32(movieMs), u32(0x00010000), u16(0x0100), u16(0),
+    u32(0), u32(0), MATRIX, new Uint8Array(24), u32(traks.length + 1));
+  const moov = box('moov', mvhd, ...traks);
+  return new Blob([ftyp, mdatHdr, ...video.samples.map(s => s.b), ...(audio ? audio.samples : []), moov], {type: 'video/mp4'});
+}
+
+/* ---------------------------------------------------------- MP4/MOV audio reading */
+async function readBytes(file, a, b){ return new Uint8Array(await file.slice(a, b).arrayBuffer()); }
+function rd32(b, o){ return ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0; }
+function rd64(b, o){ return rd32(b, o) * 4294967296 + rd32(b, o + 4); }
+function typ(b, o){ return String.fromCharCode(b[o], b[o + 1], b[o + 2], b[o + 3]); }
+function children(b, start, end){
+  const out = []; let o = start;
+  while (o + 8 <= end){
+    let size = rd32(b, o); const t = typ(b, o + 4); let hdr = 8;
+    if (size === 1){ size = rd64(b, o + 8); hdr = 16; } else if (size === 0) size = end - o;
+    if (size < hdr || o + size > end) break;
+    out.push({t, o, hdr, end: o + size}); o += size;
+  }
+  return out;
+}
+function child(b, parent, t){ return children(b, parent.o + parent.hdr, parent.end).find(c => c.t === t); }
+async function readSourceAudio(file){
+  // find moov among top-level boxes
+  let o = 0, moov = null;
+  while (o + 8 <= file.size){
+    const h = await readBytes(file, o, o + 16);
+    let size = rd32(h, 0); const t = typ(h, 4);
+    if (size === 1) size = rd64(h, 8); else if (size === 0) size = file.size - o;
+    if (size < 8) break;
+    if (t === 'moov'){ moov = await readBytes(file, o, o + size); break; }
+    o += size;
+  }
+  if (!moov) return null;
+  const root = {o: 0, hdr: 8, end: moov.length};
+  for (const trak of children(moov, 8, moov.length).filter(c => c.t === 'trak')){
+    const mdia = child(moov, trak, 'mdia'); if (!mdia) continue;
+    const hdlr = child(moov, mdia, 'hdlr'); if (!hdlr || typ(moov, hdlr.o + hdlr.hdr + 8) !== 'soun') continue;
+    const mdhd = child(moov, mdia, 'mdhd'), v = moov[mdhd.o + mdhd.hdr];
+    const timescale = rd32(moov, mdhd.o + mdhd.hdr + (v === 1 ? 20 : 12));
+    const stbl = child(moov, child(moov, mdia, 'minf'), 'stbl');
+    const g = t => child(moov, stbl, t);
+    const stsd = g('stsd'), stts = g('stts'), stsz = g('stsz'), stsc = g('stsc'), stco = g('stco') || g('co64');
+    if (!stsd || !stts || !stsz || !stsc || !stco) continue;
+    // sample description: keep as is, or rebuild a plain 'mp4a' entry from a QuickTime-style one
+    const ent = children(moov, stsd.o + stsd.hdr + 8, stsd.end)[0];
+    let entry = moov.slice(ent.o, ent.end);
+    const ver = (moov[ent.o + 16] << 8) | moov[ent.o + 17];
+    if (ent.t === 'mp4a' && ver !== 0){
+      let esds = null;
+      for (let i = ent.o + 8; i < ent.end - 8; i++) if (typ(moov, i + 4) === 'esds'){ esds = moov.slice(i, i + rd32(moov, i)); break; }
+      if (!esds) return null;
+      const ch = (moov[ent.o + 24] << 8) | moov[ent.o + 25], rate = rd32(moov, ent.o + 32) >>> 16;
+      entry = box('mp4a', [0, 0, 0, 0, 0, 0], u16(1), u32(0), u32(0), u16(ch), u16(16), u16(0), u16(0), u32(rate * 65536), esds);
+    }
+    // sample timing, sizes and file positions
+    const durs = [];
+    { const b = stts.o + stts.hdr + 4, n = rd32(moov, b);
+      for (let i = 0; i < n; i++){ const c = rd32(moov, b + 4 + i * 8), d = rd32(moov, b + 8 + i * 8); for (let k = 0; k < c; k++) durs.push(d); } }
+    const sizes = [];
+    { const b = stsz.o + stsz.hdr + 4, fixed = rd32(moov, b), n = rd32(moov, b + 4);
+      for (let i = 0; i < n; i++) sizes.push(fixed || rd32(moov, b + 8 + i * 4)); }
+    const offsets = [];
+    { const b = stco.o + stco.hdr + 4, n = rd32(moov, b), w = stco.t === 'co64' ? 8 : 4;
+      for (let i = 0; i < n; i++) offsets.push(w === 8 ? rd64(moov, b + 4 + i * 8) : rd32(moov, b + 4 + i * 4)); }
+    const runs = [];
+    { const b = stsc.o + stsc.hdr + 4, n = rd32(moov, b);
+      for (let i = 0; i < n; i++) runs.push([rd32(moov, b + 4 + i * 12), rd32(moov, b + 8 + i * 12)]); }
+    const samples = []; let si = 0;
+    for (let c = 0; c < offsets.length && si < sizes.length; c++){
+      let per = runs[0][1]; for (const [first, spc] of runs) if (c + 1 >= first) per = spc;
+      let len = 0; for (let k = 0; k < per && si + k < sizes.length; k++) len += sizes[si + k];
+      const buf = await readBytes(file, offsets[c], offsets[c] + len);
+      let p = 0; for (let k = 0; k < per && si < sizes.length; k++, si++){ samples.push(buf.subarray(p, p + sizes[si])); p += sizes[si]; }
+    }
+    if (!samples.length) return null;
+    return {entry, timescale, durs: durs.slice(0, samples.length), samples};
+  }
+  return null;
+}
+
+
+/* ---------------------------------------------------------- frame-exact decoding (MP4/MOV)
+   Playing a video and grabbing frames as they are shown silently skips frames
+   whenever the computer falls behind. Instead, the video frames are read out
+   of the file and decoded one by one with WebCodecs, so every frame is
+   analysed exactly once, at whatever speed this computer manages. */
+async function readMoovBytes(file){
+  let o = 0;
+  while (o + 8 <= file.size){
+    const h = await readBytes(file, o, o + 16);
+    let size = rd32(h, 0); const t = typ(h, 4);
+    if (size === 1) size = rd64(h, 8); else if (size === 0) size = file.size - o;
+    if (size < 8) return null;
+    if (t === 'moov') return await readBytes(file, o, o + size);
+    o += size;
+  }
+  return null;
+}
+function hex2(n){ return n.toString(16).padStart(2, '0'); }
+function sampleTables(moov, stbl){
+  const g = t => child(moov, stbl, t);
+  const stts = g('stts'), stsz = g('stsz'), stsc = g('stsc'), stco = g('stco') || g('co64'), ctts = g('ctts'), stss = g('stss');
+  if (!stts || !stsz || !stsc || !stco) return null;
+  const sizes = [];
+  { const b = stsz.o + stsz.hdr + 4, fixed = rd32(moov, b), n = rd32(moov, b + 4);
+    for (let i = 0; i < n; i++) sizes.push(fixed || rd32(moov, b + 8 + i * 4)); }
+  const n = sizes.length, dts = new Array(n);
+  { const b = stts.o + stts.hdr + 4, k = rd32(moov, b); let t = 0, i = 0;
+    for (let e = 0; e < k && i < n; e++){ const c = rd32(moov, b + 4 + e * 8), d = rd32(moov, b + 8 + e * 8); for (let j = 0; j < c && i < n; j++){ dts[i++] = t; t += d; } }
+    while (i < n) dts[i++] = t; }
+  const cto = new Array(n).fill(0);
+  if (ctts){ const b = ctts.o + ctts.hdr, ver = moov[b], k = rd32(moov, b + 4); let i = 0;
+    for (let e = 0; e < k && i < n; e++){ const c = rd32(moov, b + 8 + e * 8); let off = rd32(moov, b + 12 + e * 8); if (ver === 1 && off > 0x7fffffff) off -= 4294967296;
+      for (let j = 0; j < c && i < n; j++) cto[i++] = off; } }
+  let key = null;
+  if (stss){ key = new Uint8Array(n); const b = stss.o + stss.hdr + 4, k = rd32(moov, b); for (let e = 0; e < k; e++){ const idx = rd32(moov, b + 4 + e * 4) - 1; if (idx < n) key[idx] = 1; } }
+  const chunkOff = [];
+  { const b = stco.o + stco.hdr + 4, k = rd32(moov, b), w8 = stco.t === 'co64';
+    for (let i = 0; i < k; i++) chunkOff.push(w8 ? rd64(moov, b + 4 + i * 8) : rd32(moov, b + 4 + i * 4)); }
+  const runs = [];
+  { const b = stsc.o + stsc.hdr + 4, k = rd32(moov, b); for (let i = 0; i < k; i++) runs.push([rd32(moov, b + 4 + i * 12), rd32(moov, b + 8 + i * 12)]); }
+  const off = new Array(n); let si = 0;
+  for (let c = 0; c < chunkOff.length && si < n; c++){
+    let per = runs[0][1]; for (const [first, spc] of runs) if (c + 1 >= first) per = spc;
+    let p = chunkOff[c]; for (let j = 0; j < per && si < n; j++, si++){ off[si] = p; p += sizes[si]; }
+  }
+  return {sizes, dts, cto, key, off, n: si};
+}
+async function demuxVideo(file){
+  const moov = await readMoovBytes(file); if (!moov) return null;
+  for (const trak of children(moov, 8, moov.length).filter(c => c.t === 'trak')){
+    const mdia = child(moov, trak, 'mdia'); if (!mdia) continue;
+    const hdlr = child(moov, mdia, 'hdlr'); if (!hdlr || typ(moov, hdlr.o + hdlr.hdr + 8) !== 'vide') continue;
+    const mdhd = child(moov, mdia, 'mdhd'), mv = moov[mdhd.o + mdhd.hdr];
+    const timescale = rd32(moov, mdhd.o + mdhd.hdr + (mv === 1 ? 20 : 12));
+    // rotation from the track matrix (phones store portrait video sideways)
+    let rotation = 0;
+    const tkhd = child(moov, trak, 'tkhd');
+    if (tkhd){ const tv = moov[tkhd.o + tkhd.hdr], m = tkhd.o + tkhd.hdr + (tv === 1 ? 52 : 40);
+      const s16 = v => (v > 0x7fffffff ? v - 4294967296 : v) / 65536;
+      const a = s16(rd32(moov, m)), b = s16(rd32(moov, m + 4));
+      rotation = (Math.round(Math.atan2(b, a) * 180 / Math.PI) + 360) % 360; }
+    const stbl = child(moov, child(moov, mdia, 'minf'), 'stbl'), stsd = child(moov, stbl, 'stsd');
+    const ent = children(moov, stsd.o + stsd.hdr + 8, stsd.end)[0];
+    if (!ent || !['avc1', 'avc3', 'hvc1', 'hev1'].includes(ent.t)) return null;
+    const codedWidth = (moov[ent.o + 32] << 8) | moov[ent.o + 33], codedHeight = (moov[ent.o + 34] << 8) | moov[ent.o + 35];
+    const cfgBox = children(moov, ent.o + 86, ent.end).find(c => c.t === 'avcC' || c.t === 'hvcC');
+    if (!cfgBox) return null;
+    const c = moov.slice(cfgBox.o + cfgBox.hdr, cfgBox.end);
+    let codec;
+    if (cfgBox.t === 'avcC') codec = `${ent.t}.${hex2(c[1])}${hex2(c[2])}${hex2(c[3])}`;
+    else {
+      const ps = c[1] >> 6, tier = (c[1] >> 5) & 1, prof = c[1] & 31, compat = rd32(c, 2);
+      let rev = 0; for (let i = 0; i < 32; i++) rev = (rev * 2) + ((compat >>> i) & 1);
+      const cons = [c[6], c[7], c[8], c[9], c[10], c[11]]; while (cons.length && !cons[cons.length - 1]) cons.pop();
+      codec = `${ent.t}.${['', 'A', 'B', 'C'][ps]}${prof}.${rev.toString(16)}.${tier ? 'H' : 'L'}${c[12]}` + (cons.length ? '.' + cons.map(b => b.toString(16)).join('.') : '');
+    }
+    const tb = sampleTables(moov, stbl); if (!tb || !tb.n) return null;
+    const pts = []; for (let i = 0; i < tb.n; i++) pts.push(tb.dts[i] + tb.cto[i]);
+    const p0 = Math.min(...pts), pLast = Math.max(...pts);
+    const samples = []; for (let i = 0; i < tb.n; i++)
+      samples.push({off: tb.off[i], size: tb.sizes[i], key: tb.key ? !!tb.key[i] : true, ts: Math.round((pts[i] - p0) / timescale * 1e6)});
+    const fps = tb.n > 1 ? (tb.n - 1) / ((pLast - p0) / timescale) : 30;
+    const config = {codec, description: c, codedWidth, codedHeight};
+    const ok = await VideoDecoder.isConfigSupported(config).then(r => r.supported).catch(() => false);
+    if (!ok) return null;
+    return {config, rotation, samples, fps, count: tb.n};
+  }
+  return null;
+}
+
+// Brightness taken straight from the decoded video (its Y / luma plane) and
+// scaled down here, rather than drawn through a canvas, so results don't
+// depend on the computer's graphics hardware. Returns null if unsupported.
+async function lumaFromFrame(fr, w, h, rot){
+  const fmt = fr.format;
+  if (!fmt || !/^(I420|I420A|I422|I444|NV12|I420P10|I422P10|I444P10|NV12P10)?$/.test(fmt) || fmt === '') return null;
+  const hi = /P10/.test(fmt);
+  const rect = fr.visibleRect, Wc = rect.width, Hc = rect.height;
+  let buf, layout;
+  try { buf = new Uint8Array(fr.allocationSize({rect})); layout = await fr.copyTo(buf, {rect}); } catch(e){ return null; }
+  const {offset, stride} = layout[0];
+  // downscale in the stored orientation, then rotate the small image
+  const tw = rot % 180 ? h : w, th = rot % 180 ? w : h;
+  const sum = new Float32Array(tw * th), cnt = new Float32Array(tw * th);
+  const xmap = new Int32Array(Wc); for (let x = 0; x < Wc; x++) xmap[x] = Math.min(tw - 1, (x * tw / Wc) | 0);
+  for (let y = 0; y < Hc; y++){
+    const ty = Math.min(th - 1, (y * th / Hc) | 0), row = ty * tw;
+    if (hi){ const dv = new DataView(buf.buffer, offset + y * stride);
+      for (let x = 0; x < Wc; x++){ const t = row + xmap[x]; sum[t] += dv.getUint16(x * 2, true) / 4; cnt[t]++; } }
+    else { const o = offset + y * stride;
+      for (let x = 0; x < Wc; x++){ const t = row + xmap[x]; sum[t] += buf[o + x]; cnt[t]++; } }
+  }
+  const full = fr.colorSpace && fr.colorSpace.fullRange;
+  const small = new Uint8Array(tw * th);
+  for (let i = 0; i < tw * th; i++){
+    let v = sum[i] / cnt[i];
+    if (!full) v = (v - 16) * 255 / 219;                 // video range -> 0..255
+    small[i] = v < 0 ? 0 : v > 255 ? 255 : Math.round(v);
+  }
+  if (!rot) return small;
+  const out = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++){
+    let sx, sy;
+    if (rot === 90){ sx = y; sy = th - 1 - x; }
+    else if (rot === 180){ sx = tw - 1 - x; sy = th - 1 - y; }
+    else { sx = tw - 1 - y; sy = x; }
+    out[y * w + x] = small[sy * tw + sx];
+  }
+  return out;
+}
+// draw a decoded frame upright (applying the phone's rotation) at W x H
+function drawUpright(ctx, img, W, H, rot){
+  if (!rot){ ctx.drawImage(img, 0, 0, W, H); return; }
+  ctx.save();
+  if (rot === 90){ ctx.translate(W, 0); ctx.rotate(Math.PI / 2); ctx.drawImage(img, 0, 0, H, W); }
+  else if (rot === 180){ ctx.translate(W, H); ctx.rotate(Math.PI); ctx.drawImage(img, 0, 0, W, H); }
+  else if (rot === 270){ ctx.translate(0, H); ctx.rotate(-Math.PI / 2); ctx.drawImage(img, 0, 0, H, W); }
+  else ctx.drawImage(img, 0, 0, W, H);
+  ctx.restore();
+}
+// decode every frame in display order; onFrame(index, seconds, frame) may be async
+async function decodeAll(dm, file, onFrame){
+  const pending = []; let err = null;
+  const dec = new VideoDecoder({output: f => pending.push(f), error: e => { err = e; }});
+  dec.configure(dm.config);
+  let fed = 0, idx = 0, flushed = false;
+  try {
+    while (true){
+      if (err) throw err;
+      if (S.stop) break;
+      while (fed < dm.count && dec.decodeQueueSize < 6 && pending.length < 6){
+        const sm = dm.samples[fed];
+        const data = await readBytes(file, sm.off, sm.off + sm.size);
+        dec.decode(new EncodedVideoChunk({type: sm.key ? 'key' : 'delta', timestamp: sm.ts, data}));
+        fed++;
+      }
+      if (pending.length){
+        const fr = pending.shift();
+        try { await onFrame(idx++, fr.timestamp / 1e6, fr); } finally { fr.close(); }
+        if (idx % 8 === 0) await sleep(0);
+        continue;
+      }
+      if (fed >= dm.count){
+        if (!flushed){ flushed = true; await dec.flush(); continue; }
+        break;
+      }
+      await sleep(1);
+    }
+  } finally {
+    for (const f of pending) f.close();
+    try { dec.close(); } catch(e){}
+  }
+  if (err) throw err;
+  return idx;
+}
+
+/* ---------------------------------------------------------- output painter (shared) */
+function makePainter(fps, tally, drawlog, shifts, showBoxes, geo){
+  const scale = Math.min(1, 1280 / Math.max(S.vw, S.vh));
+  const W = Math.round(S.vw * scale / 2) * 2, H = Math.round(S.vh * scale / 2) * 2;
+  const barH = Math.max(60, Math.round(H * 0.07 / 2) * 2);
+  const c = document.createElement('canvas'); c.width = W; c.height = H + barH;
+  const x = c.getContext('2d');
+  const k = W / S.aw;
+  const bandPts = showBoxes ? bandOutlinePath(geo, S.aw, S.ah) : null;
+  const paint = (f, drawSrc) => {
+    if (window.__paintDelayMs){ const e = performance.now() + window.__paintDelayMs; while (performance.now() < e); }
+    drawSrc(x, W, H);
+    if (showBoxes){
+      const sh = shifts.get(f) || [0, 0];
+      x.fillStyle = '#f2a541';
+      for (let i = 0; i < bandPts.length; i += 2) x.fillRect((bandPts[i] + sh[0]) * k, (bandPts[i + 1] + sh[1]) * k, Math.max(1, k * 0.6), Math.max(1, k * 0.6));
+      drawOverlay(x, drawlog.get(f) || [], f, k, sh, false, geo);
+    }
+    x.fillStyle = '#000'; x.fillRect(0, H, W, barH);
+    const n = tally[Math.min(f, tally.length - 1)];
+    x.fillStyle = '#fff'; x.font = `700 ${Math.round(barH * 0.55)}px system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif`;
+    x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillText(`${n} Bats`, W / 2, H + barH / 2 + 1);
+  };
+  return {c, paint, W, H: H + barH};
+}
+
+async function encodeOutput(fps, tally, drawlog, shifts, showBoxes, geo, dur, dm){
+  if (!('VideoEncoder' in window) || !('VideoFrame' in window)) return null;
+  if (!dm){ await loadVideo(rec, S.url); rec.muted = true; }
+  const {c, paint, W, H} = makePainter(fps, tally, drawlog, shifts, showBoxes, geo);
+  let cfg = null;
+  for (const codec of ['avc1.640034', 'avc1.640028', 'avc1.4d0028', 'avc1.42002a', 'avc1.42001f']){
+    const conf = {codec, width: W, height: H, bitrate: 8e6, framerate: Math.round(fps), avc: {format: 'avc'}};
+    try { if ((await VideoEncoder.isConfigSupported(conf)).supported){ cfg = conf; break; } } catch(e){}
+  }
+  if (!cfg) return null;
+  const audioP = readSourceAudio(S.file).catch(e => { console.warn('audio copy failed', e); return null; });
+  const samples = []; let avcC = null, encErr = null;
+  const enc = new VideoEncoder({
+    output: (chunk, meta) => {
+      if (!avcC && meta && meta.decoderConfig && meta.decoderConfig.description){
+        const d = meta.decoderConfig.description;
+        avcC = d instanceof ArrayBuffer ? new Uint8Array(d.slice(0)) : new Uint8Array(d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength));
+      }
+      const b = new Uint8Array(chunk.byteLength); chunk.copyTo(b);
+      samples.push({b, ts: chunk.timestamp, key: chunk.type === 'key'});
+    },
+    error: e => { encErr = e; },
+  });
+  enc.configure(cfg);
+  const live = $('liveCanvas'), lx = live.getContext('2d');
+  live.height = Math.round(live.width * H / W);
+  const keyEvery0 = Math.max(1, Math.round(fps * 2));
+  if (dm){
+    // frame-exact: decode every source frame, draw, encode with its own timestamp
+    let n = 0;
+    await decodeAll(dm, S.file, async (i, t, fr) => {
+      if (encErr) throw encErr;
+      paint(i, (x, w_, h_) => drawUpright(x, fr, w_, h_, dm.rotation));
+      const vf = new VideoFrame(c, {timestamp: Math.round(t * 1e6)});
+      enc.encode(vf, {keyFrame: n % keyEvery0 === 0}); vf.close(); n++;
+      if (n % 4 === 0){ lx.drawImage(c, 0, 0, live.width, live.height); setProg(0.6 + 0.4 * i / dm.count); }
+      while (enc.encodeQueueSize > 6) await sleep(2);
+    });
+    await enc.flush(); enc.close();
+    if (encErr) throw encErr;
+    if (S.stop || !avcC || !samples.length) return null;
+    return buildMp4({samples, avcC, w: W, h: H, fps}, await audioP);
+  }
+  await seek(rec, 0);
+  let lastT = -1, n = 0, gaps = 0, sinceAdj = 0, clean = 0;
+  rec.playbackRate = 1;
+  const keyEvery = Math.max(1, Math.round(fps * 2));
+  await new Promise((resolve, reject) => {
+    const cb = async (now, md) => {
+      if (S.stop || encErr){ rec.pause(); resolve(); return; }
+      if (md.mediaTime > lastT){
+        // audio is copied from the file, so playback speed doesn't matter:
+        // slow down whenever this computer can't draw every frame in time
+        if (lastT >= 0 && md.mediaTime - lastT > 1.5 / fps) gaps++;
+        if (++sinceAdj >= 20){
+          if (gaps > 0 && rec.playbackRate > 0.1) rec.playbackRate = Math.max(0.1, rec.playbackRate * 0.6);
+          else if (!gaps && rec.playbackRate < 1 && ++clean >= 6){ rec.playbackRate = Math.min(1, rec.playbackRate * 1.25); clean = 0; }
+          gaps = 0; sinceAdj = 0;
+        }
+        lastT = md.mediaTime;
+        const f = Math.round(md.mediaTime * fps);
+        paint(f, (x, w_, h_) => x.drawImage(rec, 0, 0, w_, h_));
+        const vf = new VideoFrame(c, {timestamp: Math.round(md.mediaTime * 1e6)});
+        enc.encode(vf, {keyFrame: n % keyEvery === 0}); vf.close(); n++;
+        if (n % 4 === 0) lx.drawImage(c, 0, 0, live.width, live.height);
+        setProg(0.6 + 0.4 * md.mediaTime / dur);
+        if (enc.encodeQueueSize > 6){              // let the encoder catch up
+          rec.pause();
+          while (enc.encodeQueueSize > 1) await sleep(5);
+          if (!rec.ended) rec.play();
+        }
+      }
+      if (rec.ended || md.mediaTime >= dur - 0.5 / fps){ resolve(); return; }
+      rec.requestVideoFrameCallback(cb);
+    };
+    rec.onended = () => resolve();
+    rec.requestVideoFrameCallback(cb);
+    rec.play().catch(reject);
+  });
+  rec.pause(); rec.onended = null;
+  await enc.flush(); enc.close();
+  if (encErr) throw encErr;
+  if (S.stop) return null;
+  if (!avcC || !samples.length) return null;
+  const audio = await audioP;
+  return buildMp4({samples, avcC, w: W, h: H, fps}, audio);
+}
+
+async function recordOutput(fps, tally, drawlog, shifts, showBoxes, geo, dur){
+  const scale = Math.min(1, 1280 / Math.max(S.vw, S.vh));
+  const W = Math.round(S.vw * scale / 2) * 2, H = Math.round(S.vh * scale / 2) * 2;
+  const barH = Math.max(60, Math.round(H * 0.07 / 2) * 2);
+  const c = document.createElement('canvas'); c.width = W; c.height = H + barH;
+  const x = c.getContext('2d');
+  const k = W / S.aw;
+  const bandPts = showBoxes ? bandOutlinePath(geo, S.aw, S.ah) : null;
+  await loadVideo(rec, S.url);
+  rec.muted = false; rec.volume = 1;
+  const vstream = c.captureStream(Math.min(60, Math.round(fps)));
+  const tracks = [...vstream.getVideoTracks()];
+  if (audioCtx){
+    try {
+      const src = audioCtx.createMediaElementSource(rec), dest = audioCtx.createMediaStreamDestination();
+      src.connect(dest);                      // recorded, not played aloud
+      tracks.push(...dest.stream.getAudioTracks());
+    } catch(e){ /* no audio */ }
+  } else rec.muted = true;
+  const stream = new MediaStream(tracks);
+  const types = ['video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4;codecs=avc1', 'video/webm;codecs=vp9,opus',
+                 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
+  const mime = types.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || '';
+  const mr = new MediaRecorder(stream, mime ? {mimeType: mime, videoBitsPerSecond: 8e6} : {});
+  const chunks = []; mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  const live = $('liveCanvas'), lx = live.getContext('2d');
+  live.height = Math.round(live.width * c.height / c.width);
+  const paint = (f) => {
+    if (window.__paintDelayMs){ const e = performance.now() + window.__paintDelayMs; while (performance.now() < e); }
+    x.drawImage(rec, 0, 0, W, H);
+    if (showBoxes){
+      const sh = shifts.get(f) || [0, 0];
+      x.fillStyle = '#f2a541';
+      for (let i = 0; i < bandPts.length; i += 2) x.fillRect((bandPts[i] + sh[0]) * k, (bandPts[i + 1] + sh[1]) * k, Math.max(1, k * 0.6), Math.max(1, k * 0.6));
+      drawOverlay(x, drawlog.get(f) || [], f, k, sh, false, geo);
+    }
+    x.fillStyle = '#000'; x.fillRect(0, H, W, barH);
+    const n = tally[Math.min(f, tally.length - 1)];
+    x.fillStyle = '#fff'; x.font = `700 ${Math.round(barH * 0.55)}px system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif`;
+    x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillText(`${n} Bats`, W / 2, H + barH / 2 + 1);
+  };
+  await seek(rec, 0);
+  paint(0);
+  mr.start(1000);
+  await new Promise(resolve => {
+    const cb = (now, md) => {
+      if (S.stop){ rec.pause(); resolve(); return; }
+      const f = Math.round(md.mediaTime * fps);
+      paint(f);
+      lx.drawImage(c, 0, 0, live.width, live.width * c.height / c.width);
+      setProg(0.6 + 0.4 * md.mediaTime / dur);
+      if (!rec.ended) rec.requestVideoFrameCallback(cb);
+    };
+    rec.onended = () => resolve();
+    rec.requestVideoFrameCallback(cb);
+    rec.play().catch(() => { rec.muted = true; rec.play(); });
+  });
+  await sleep(300);
+  await new Promise(r => { mr.onstop = r; mr.stop(); });
+  if (S.stop) return null;
+  return new Blob(chunks, {type: (mime || 'video/webm').split(';')[0]});
+}
+</script>
+</body>
+</html>
