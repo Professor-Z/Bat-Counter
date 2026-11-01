@@ -1522,15 +1522,12 @@ function makePainter(fps, tally, drawlog, shifts, showBoxes, geo){
   const c = document.createElement('canvas'); c.width = W; c.height = H + barH + topH;
   const x = c.getContext('2d');
   const k = W / S.aw;
-  const bandPts = showBoxes ? bandOutlinePath(geo, S.aw, S.ah) : null;
   const paint = (f, drawSrc) => {
     if (window.__paintDelayMs){ const e = performance.now() + window.__paintDelayMs; while (performance.now() < e); }
     x.save(); x.translate(0, topH);
     drawSrc(x, W, H);
     if (showBoxes){
       const sh = shifts.get(f) || [0, 0];
-      x.fillStyle = '#f2a541';
-      for (let i = 0; i < bandPts.length; i += 2) x.fillRect((bandPts[i] + sh[0]) * k, (bandPts[i + 1] + sh[1]) * k, Math.max(1, k * 0.6), Math.max(1, k * 0.6));
       drawOverlay(x, drawlog.get(f) || [], f, k, sh, false, geo);
     }
     x.fillStyle = '#000'; x.fillRect(0, H, W, barH);
