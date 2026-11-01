@@ -108,10 +108,16 @@ ul.tips{margin:8px 0 0;padding-left:20px;color:var(--muted);font-size:.92rem}
   <section class="card hidden" id="cardRun">
     <div class="step"><span class="num">3</span><div><h2>Count the bats</h2>
       <p class="hint">On a typical computer this takes about as long as the video itself (longer for 4K or very long
-        videos). Every frame is analysed, so a slower computer just takes longer. Keep this tab open until it finishes.</p></div></div>
+        videos). You can switch to other tabs or windows while it works; just keep this tab open and the
+        computer awake until it finishes.</p></div></div>
     <div class="opts">
       <label><input type="checkbox" id="optBoxes" checked><span>Show tracking boxes in the output video
         <small>Green = counted, orange = just left the house, gray = a bat that didn't come from the house.</small></span></label>
+      <div>
+        <label><input type="checkbox" id="optDate"><span>Add the date to the top of the video</span></label>
+        <input type="date" id="optDateVal" class="hidden" style="margin:8px 0 0 28px;padding:6px 8px;border-radius:8px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);font:inherit">
+        <small id="optDateNote" class="hidden" style="display:block;margin-left:28px;color:var(--muted);font-size:.82rem"></small>
+      </div>
       <label style="display:block">Sensitivity: <output id="sensOut">7 (normal)</output>
         <input type="range" id="optSens" min="1" max="10" step="1" value="7">
         <small>Slide right to pick up fainter or smaller bats (late dusk, camera far from the house).
@@ -373,7 +379,8 @@ class Backgrounds {
   index(t){ let best = 0, bd = 1e9; for (let k = 0; k < this.s.length; k++){ const d = Math.abs(this.s[k].t - t); if (d < bd){ bd = d; best = k; } } return best; }
   getK(k){
     if (k === this.cacheK) return this.cache;
-    const t = this.s[k].t, st = this.s.filter(s => Math.abs(s.t - t) <= P.bgWindowSec).map(s => s.g);
+    const t = this.s[k].t; let st = this.s.filter(s => Math.abs(s.t - t) <= P.bgWindowSec).map(s => s.g);
+    if (st.length > 25){ const e = st.length / 25; st = Array.from({length: 25}, (_, j) => st[Math.floor(j * e)]); }
     const bg = medianStack(st, this.w * this.h);
     const mask = dilate(darkMask(bg, this.w, this.h), this.w, this.h, 2);
     const thr = thresholdMap(bg, mask, st, this.w * this.h);
@@ -387,11 +394,12 @@ async function flickerMap(bgs, w, h, onProg){
   const acc = new Uint16Array(w * h), step = Math.max(1, Math.floor(bgs.s.length / 150));
   let used = 0;
   for (let k = 0; k < bgs.s.length; k += step){
-    const {bg, mask, thr} = bgs.getK(k), g = bgs.s[k].g;
-    for (let i = 0; i < w * h; i++) if (!mask[i] && bg[i] - g[i] > thr[i]) acc[i]++;
+    const {bg, mask, thr} = bgs.getK(k), g = bgs.s[k].g, on = [];
+    for (let i = 0; i < w * h; i++) if (!mask[i] && bg[i] - g[i] > thr[i]){ acc[i]++; on.push(i); }
+    bgs.s[k].on = on;
     used++;
     if (onProg) onProg(k / bgs.s.length);
-    await sleep(0);
+    await yieldNow();
     if (S.stop) break;
   }
   const f = new Uint8Array(w * h), lim = P.flicker * used;
@@ -612,7 +620,7 @@ class Counter {
     this.log(f);
   }
   log(f){
-    this.drawlog.set(f, this.tracks.filter(t => t.last === f).map(t => [t, t.box.slice(), t.pts.slice(-15).map(p => [p[0], p[1]])]));
+    this.drawlog.set(f, this.tracks.filter(t => t.last === f).map(t => [t, t.box.slice(), t.pts.slice(-24).map(p => [p[0], p[1]])]));
   }
   finish(f){ for (const t of this.tracks.slice()){ this.tracks.splice(this.tracks.indexOf(t), 1); this.retire(t, f); } }
   exitsSoFar(){ let n = 0; for (const e of this.events) if (e.n > 0) n++; return n; }
@@ -735,6 +743,11 @@ async function openFile(f){
     aCanvas.width = S.aw; aCanvas.height = S.ah;
     await seek(work, Math.min(1, work.duration / 2));
     S.previewGray = grabGray(work);
+    guessRecordingDate(f).then(g => {
+      const d = g ? g.date : new Date();
+      $('optDateVal').value = isoLocal(d);
+      $('optDateNote').textContent = g ? `Filled in from ${g.from}; change it if that's not the recording date.` : '';
+    });
     S.box = null; S.geoPreview = null;
     $('cardBox').classList.remove('hidden'); $('cardRun').classList.remove('hidden');
     $('cardResult').classList.add('hidden');
@@ -794,6 +807,25 @@ function setHouseBox(b){
 window.setHouseBox = setHouseBox;          // for scripted testing
 
 /* ---------------------------------------------------------- step 3: run */
+// ---- date option
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+function formatDate(v){ const [y, m, d] = v.split('-').map(Number); return `${MONTHS[m - 1]} ${d}, ${y}`; }
+function isoLocal(dt){ return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`; }
+$('optDate').addEventListener('change', e => { $('optDateVal').classList.toggle('hidden', !e.target.checked); $('optDateNote').classList.toggle('hidden', !e.target.checked); });
+// recording date: from the video's own creation time if present, else the file's date
+async function guessRecordingDate(f){
+  try {
+    const moov = await readMoovBytes(f);
+    if (moov){
+      const mvhd = children(moov, 8, moov.length).find(c => c.t === 'mvhd');
+      if (mvhd){ const v = moov[mvhd.o + mvhd.hdr];
+        const secs = v === 1 ? rd64(moov, mvhd.o + mvhd.hdr + 4) : rd32(moov, mvhd.o + mvhd.hdr + 4);
+        const ms = (secs - 2082844800) * 1000;               // seconds since 1904 -> ms since 1970
+        if (secs > 2082844800 && ms < Date.now() + 864e5) return {date: new Date(ms), from: 'the video'}; }
+    }
+  } catch(e){}
+  return f.lastModified ? {date: new Date(f.lastModified), from: 'the file'} : null;
+}
 const SENS_NAMES = {1: 'lowest', 4: 'low', 7: 'normal', 9: 'high', 10: 'highest'};
 $('optSens').addEventListener('input', e => { const v = +e.target.value; $('sensOut').textContent = v + (SENS_NAMES[v] ? ` (${SENS_NAMES[v]})` : ''); });
 // sensitivity 1..10 -> darkness threshold (lower = fainter bats) and smallest blob size
@@ -805,6 +837,8 @@ function applySensitivity(v){
 }
 $('runBtn').addEventListener('click', () => run().catch(err => { console.error(err); showErr('runErr', 'Something went wrong: ' + (err.message || err)); finishUI(); }));
 $('stopBtn').addEventListener('click', () => { S.stop = true; });
+// closing the tab mid-run would lose the work: ask first
+window.addEventListener('beforeunload', e => { if (S.running){ e.preventDefault(); e.returnValue = ''; } });
 function setProg(frac, txt){ $('progBar').style.width = (100 * Math.max(0, Math.min(1, frac))).toFixed(1) + '%'; if (txt) $('stageTxt').textContent = txt; }
 function finishUI(){ S.running = false; $('runBtn').disabled = false; $('stopBtn').classList.add('hidden'); }
 
@@ -815,7 +849,9 @@ async function run(){
   $('runBtn').disabled = true; $('stopBtn').classList.remove('hidden'); $('progWrap').classList.remove('hidden');
   $('cardResult').classList.add('hidden');
   applySensitivity(+$('optSens').value); P.net = true;   // bats seen flying back in are subtracted
+  P.bgStepSec = 0.5; P.bgWindowSec = 3;
   const showBoxes = $('optBoxes').checked;
+  S.dateText = $('optDate').checked && $('optDateVal').value ? formatDate($('optDateVal').value) : null;
   // audio graph must be created inside the click
   try { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume(); } catch(e){ audioCtx = null; }
   TRACK_ID = 1;
@@ -865,16 +901,34 @@ async function run(){
   }
   if (S.stop || !samples.length) return stopped();
   const bgs = new Backgrounds(samples, w, h);
-  setProg(0.1, 'Step 1 of 3: finding swaying leaves…'); await sleep(20);
+  setProg(0.1, 'Step 1 of 3: finding swaying leaves…'); await yieldNow();
   const geo = houseGeometry(bgs.getK(0).bg, w, h, S.box, P.poleLen) || S.geoPreview;
   let flick = await flickerMap(bgs, w, h, fr => setProg(0.1 + 0.02 * fr));
   for (let i = 0; i < w * h; i++) if (geo.dist[i] <= P.portal * 2) flick[i] = 0;
+  let pilot = null;
+  if (dm){ setProg(0.12, 'Step 1 of 3: checking for slow motion…');
+    try { pilot = await measureFrameStep(dm, bgs, flick, stab, w, h, grabFrame); } catch(e){ console.warn('slow-motion check failed', e); } }
 
   // ---- pass 2: detect + track every frame
   setProg(0.12, 'Step 2 of 3: tracking bats…');
   const fps = dm ? dm.fps : await probeFps(work);
-  const N = dm ? dm.count : Math.floor(dur * fps);
-  const ctr = new Counter(w, h, geo, fps);
+  // Everything is tuned for about 30 frames per second of *real* time. For a
+  // high-frame-rate file or a slowed-down slow-motion clip, analyse only every
+  // n-th frame. n comes from how far bats move per frame relative to their size
+  // (measured above); if too few bats were measured, from the frame rate.
+  let step = Math.max(1, Math.round(fps / 30)), stepFrom = 'frame rate';
+  if (pilot && pilot.n >= 40 && pilot.q75){
+    step = pilot.q75 > 1.15 ? 1 : pilot.q75 > 0.6 ? 2 : pilot.q75 > 0.3 ? 4 : 8;
+    stepFrom = 'bat movement';
+  }
+  if (window.__forceStep) step = window.__forceStep;
+  // a slowed-down clip covers less real time per video second: widen the
+  // background window to match (in video seconds)
+  const slowFactor = Math.max(1, (30 * step) / fps);
+  P.bgWindowSec = 3 * slowFactor;
+  const fpsA = fps / step;                           // analysed frames per second of video
+  const N = dm ? Math.ceil(dm.count / step) : Math.floor(dur * fpsA);
+  const ctr = new Counter(w, h, geo, 30);
   const shifts = new Map();
   const live = $('liveCanvas'), lx = live.getContext('2d');
   live.width = Math.round(w * 1.2); live.height = Math.round(h * 1.2);
@@ -903,16 +957,18 @@ async function run(){
     }
   };
   if (dm){
-    await decodeAll(dm, S.file, async (i, t, fr) => processFrame(i, t, await grabFrame(fr), (x, W_, H_) => drawUpright(x, fr, W_, H_, dm.rotation)));
+    await decodeAll(dm, S.file, async (i, t, fr) => { if (i % step) return;
+      processFrame(i / step, t, await grabFrame(fr), (x, W_, H_) => drawUpright(x, fr, W_, H_, dm.rotation)); });
   } else {
     // fallback: play the video and grab frames as they are shown (pausing for
     // each one); a slow computer may still skip a few frames this way
+    setProg(0.12, 'Step 2 of 3: tracking bats… (this browser needs this tab to stay visible)');
     await seek(work, 0);
     work.playbackRate = 1;
     await new Promise((resolve) => {
       const cb = async (now, md) => {
         if (S.stop){ work.pause(); resolve(); return; }
-        const f = Math.round(md.mediaTime * fps);
+        const f = Math.round(md.mediaTime * fpsA);
         if (f > lastF){
           work.pause();
           processFrame(f, md.mediaTime, grabGray(work), (x, W_, H_) => x.drawImage(work, 0, 0, W_, H_));
@@ -945,16 +1001,16 @@ async function run(){
   // csv
   let csv = 'frame,time_s,track_id,change,how,exits,returns,net\n', e_ = 0, r_ = 0;
   for (const e of events){ if (e.n > 0) e_ += e.n; else r_ -= e.n; csv += `${e.f},${(e.f / fps).toFixed(2)},${e.t.id},${e.n},${e.how},${e_},${r_},${e_ - r_}\n`; }
-  window.__result = {exits, returns, finalCount, fps, drops, exact: !!dm, luma: dm ? lumaOK : false, frames, clumps: clumpInfo};
+  window.__result = {exits, returns, finalCount, fps, step, stepFrom, pilot, drops, exact: !!dm, luma: dm ? lumaOK : false, frames, clumps: clumpInfo};
   window.__events = events.map(e => ({f: e.f, n: e.n, how: e.how, id: e.t.id, x: Math.round(e.t.pts[0][0]), y: Math.round(e.t.pts[0][1])}));
 
   // ---- pass 3: record output video in real time
   setProg(0.6, 'Step 3 of 3: making your video…');
   $('liveCount').textContent = finalCount + ' bats';
   let blob = null;
-  try { blob = await encodeOutput(fps, tallyAt, ctr.drawlog, shifts, showBoxes, geo, dur, dm); }
+  try { blob = await encodeOutput(fps, tallyAt, ctr.drawlog, shifts, showBoxes, geo, dur, dm, step); }
   catch(e){ console.warn('frame-by-frame encoding failed, recording instead', e); blob = null; }
-  if (!blob && !S.stop) blob = await recordOutput(fps, tallyAt, ctr.drawlog, shifts, showBoxes, geo, dur);
+  if (!blob && !S.stop) blob = await recordOutput(fps, tallyAt, ctr.drawlog, shifts, showBoxes, geo, dur, step);
   if (!blob) return stopped();
 
   // ---- results
@@ -965,7 +1021,7 @@ async function run(){
   $('dlVideo').href = outUrl; $('dlVideo').download = base + '.' + ext;
   $('dlCsv').href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'})); $('dlCsv').download = base + '_events.csv';
   $('finalCount').textContent = finalCount + (finalCount === 1 ? ' Bat' : ' Bats');
-  const how = dm ? `All ${frames} frames analysed.` : 'Analysed by playing the video (this browser can\u2019t decode it frame by frame; a few frames may be skipped).';
+  const how = step > 1 ? `Detected ${fps >= 45 ? 'a high frame rate' : 'slow motion'} (from ${stepFrom}): every ${step === 2 ? '2nd' : step + 'th'} frame analysed (${frames} frames).` : dm ? `All ${frames} frames analysed.` : 'Analysed by playing the video (this browser can\u2019t decode it frame by frame; a few frames may be skipped).';
   $('finalDetail').textContent = (P.net
     ? `${exits} seen leaving, ${returns} seen flying back in. `
     : `${exits} seen leaving. `) + how + ` Sensitivity ${$('optSens').value}.`;
@@ -977,16 +1033,57 @@ async function run(){
 }
 function stopped(){ setProg(0, 'Stopped.'); work.pause(); try { rec.pause(); } catch(e){} finishUI(); }
 
+const TRAIL_RGB = {green: [62, 224, 106], orange: [242, 165, 65], gray: [170, 170, 170]};
+// smooth a track's recent positions: average out frame-to-frame jitter, then
+// fill in a curve (Catmull-Rom) through the averaged points
+function smoothTrail(pts){
+  let p = pts.map(q => [q[0], q[1]]);
+  for (let pass = 0; pass < 2 && p.length > 2; pass++){
+    const o = [p[0]];
+    for (let i = 1; i < p.length - 1; i++) o.push([(p[i - 1][0] + 2 * p[i][0] + p[i + 1][0]) / 4, (p[i - 1][1] + 2 * p[i][1] + p[i + 1][1]) / 4]);
+    o.push(p[p.length - 1]); p = o;
+  }
+  if (p.length < 3) return p;
+  const out = [];
+  for (let i = 0; i < p.length - 1; i++){
+    const p0 = p[Math.max(0, i - 1)], p1 = p[i], p2 = p[i + 1], p3 = p[Math.min(p.length - 1, i + 2)];
+    for (let s = 0; s < 4; s++){
+      const t = s / 4, t2 = t * t, t3 = t2 * t;
+      out.push([0.5 * (2 * p1[0] + (-p0[0] + p2[0]) * t + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3),
+                0.5 * (2 * p1[1] + (-p0[1] + p2[1]) * t + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3)]);
+    }
+  }
+  out.push(p[p.length - 1]);
+  return out;
+}
+// a laser-like trail: soft glow plus a bright core, fading out toward the tail
+function drawTrail(ctx, tail, rgb, k, dx, dy){
+  if (tail.length < 2) return;
+  const pts = smoothTrail(tail).map(q => [(q[0] + dx) * k, (q[1] + dy) * k]);
+  const n = pts.length, core = Math.max(1.2, k * 0.75);
+  ctx.save();
+  ctx.lineCap = 'round';
+  // colored glow, colored core, then a thin brighter centre line (like a beam)
+  const hot = rgb.map(v => Math.round(v + (255 - v) * 0.6));
+  for (const [wMul, aMul, c] of [[5, 0.16, rgb], [2.6, 0.33, rgb], [1.2, 1, rgb], [0.45, 0.9, hot]]){
+    for (let i = 1; i < n; i++){
+      const a = Math.pow(i / (n - 1), 1.6);                                  // 0 at tail -> 1 at bat
+      ctx.strokeStyle = `rgba(${c[0]},${c[1]},${c[2]},${(a * aMul).toFixed(3)})`;
+      ctx.lineWidth = core * wMul * (0.35 + 0.65 * a);
+      ctx.beginPath(); ctx.moveTo(pts[i - 1][0], pts[i - 1][1]); ctx.lineTo(pts[i][0], pts[i][1]); ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
 function drawOverlay(ctx, entries, f, k, shift, withBand, geo){
   const [dx, dy] = shift || [0, 0];
-  ctx.lineWidth = Math.max(1, k * 0.9);
   for (const [t, b, tail] of entries){
-    const col = (t.greenFrom !== null && f >= t.greenFrom) ? '#3ee06a' : ((t.eligible || t.parent) ? '#f2a541' : '#a0a0a0');
-    ctx.strokeStyle = col;
+    const kind = (t.greenFrom !== null && f >= t.greenFrom) ? 'green' : ((t.eligible || t.parent) ? 'orange' : 'gray');
+    const rgb = TRAIL_RGB[kind];
+    drawTrail(ctx, tail, rgb, k, dx, dy);
+    ctx.lineWidth = Math.max(1, k * 0.9);
+    ctx.strokeStyle = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
     ctx.strokeRect((b[0] + dx) * k, (b[1] + dy) * k, b[2] * k, b[3] * k);
-    ctx.beginPath();
-    tail.forEach((p, j) => { const X = (p[0] + dx) * k, Y = (p[1] + dy) * k; j ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); });
-    ctx.stroke();
   }
 }
 
@@ -1242,7 +1339,8 @@ async function demuxVideo(file){
     const config = {codec, description: c, codedWidth, codedHeight};
     const ok = await VideoDecoder.isConfigSupported(config).then(r => r.supported).catch(() => false);
     if (!ok) return null;
-    return {config, rotation, samples, fps, count: tb.n};
+    const presTs = samples.map(x => x.ts).sort((a, b) => a - b);
+    return {config, rotation, samples, fps, count: tb.n, presTs};
   }
   return null;
 }
@@ -1297,6 +1395,88 @@ function drawUpright(ctx, img, W, H, rot){
   else ctx.drawImage(img, 0, 0, W, H);
   ctx.restore();
 }
+
+// decode only display frames from..to (inclusive); onFrame(index, seconds, frame)
+async function decodeRange(dm, file, from, to, onFrame){
+  from = Math.max(0, from); to = Math.min(dm.count - 1, to);
+  const want = new Map(); for (let p = from; p <= to; p++) want.set(dm.presTs[p], p);
+  let sMin = Infinity, sMax = -1;
+  dm.samples.forEach((sm, i) => { if (want.has(sm.ts)){ sMin = Math.min(sMin, i); sMax = Math.max(sMax, i); } });
+  if (sMax < 0) return;
+  let s0 = sMin; while (s0 > 0 && !dm.samples[s0].key) s0--;
+  const pending = []; let err = null;
+  const dec = new VideoDecoder({output: f => pending.push(f), error: e => { err = e; }});
+  dec.configure(dm.config);
+  try {
+    for (let i = s0; i <= sMax + 8 && i < dm.count; i++){
+      const sm = dm.samples[i];
+      dec.decode(new EncodedVideoChunk({type: sm.key ? 'key' : 'delta', timestamp: sm.ts, data: await readBytes(file, sm.off, sm.off + sm.size)}));
+      while (dec.decodeQueueSize > 6 || pending.length > 6){
+        if (err) throw err;
+        while (pending.length){ const fr = pending.shift(); try { if (want.has(fr.timestamp)) await onFrame(want.get(fr.timestamp), fr.timestamp / 1e6, fr); } finally { fr.close(); } }
+        await yieldNow();
+      }
+    }
+    await dec.flush();
+    while (pending.length){ const fr = pending.shift(); try { if (want.has(fr.timestamp)) await onFrame(want.get(fr.timestamp), fr.timestamp / 1e6, fr); } finally { fr.close(); } }
+  } finally { for (const f of pending) f.close(); try { dec.close(); } catch(e){} }
+  if (err) throw err;
+}
+
+// Is this slow motion (or a high frame rate)? A flying bat moves about one
+// body-width every 1/30 s of real time, whatever the camera distance, so how
+// far bats move between frames *relative to their own size* tells us how many
+// frames there are per 1/30 s of real time. Measured at the busiest moments.
+async function measureFrameStep(dm, bgs, flick, stab, w, h, grabFrame){
+  const act = bgs.s.map((sm, k) => ({k, t: sm.t, n: sm.on ? sm.on.filter(i => !flick[i]).length : -1}))
+                   .filter(a => a.n > 0).sort((a, b) => b.n - a.n);
+  const picks = [];
+  for (const a of act){ if (picks.every(p => Math.abs(p.t - a.t) > 2)) picks.push(a); if (picks.length >= 4) break; }
+  const ratios = [];
+  for (const pk of picks){
+    const p0 = Math.round(pk.t * dm.fps);
+    const frames = [];                       // {i, dets} for each non-repeated frame
+    let lastG = null;
+    await decodeRange(dm, S.file, p0, p0 + 40, async (i, t, fr) => {
+      const g = await grabFrame(fr);
+      if (lastG){ let c = 0, n = 0; for (let q = 0; q < g.length; q += 7){ n++; if (Math.abs(g[q] - lastG[q]) > 8) c++; }
+        if (c / n < P.dupThresh){ lastG = g; return; } }       // repeated frame
+      lastG = g;
+      const [dx, dy] = stab.estimate(g);
+      const ga = shiftImg(g, w, h, dx, dy, 255), {bg, mask, thr} = bgs.get(t);
+      frames.push({i, dets: detect(ga, bg, mask, flick, w, h, thr)});
+    });
+    if (S.stop) break;
+    // spots occupied in many frames of this stretch are fixed objects, not bats
+    const isStatic = d => { let c = 0;
+      for (const fr2 of frames) if (fr2.dets.some(e => Math.hypot(e.x - d.x, e.y - d.y) < 3)) c++;
+      return c > 0.3 * frames.length; };
+    for (let k = 1; k < frames.length; k++){
+      const A = frames[k - 1], B = frames[k];
+      if (B.i - A.i !== 1) continue;
+      for (const a of A.dets){
+        let best = null, bd = 1e9;
+        for (const b of B.dets){ const d = Math.hypot(a.x - b.x, a.y - b.y); if (d < bd){ bd = d; best = b; } }
+        if (!best) continue;
+        let back = null, bb = 1e9;                  // mutual nearest neighbours only
+        for (const c of A.dets){ const d = Math.hypot(c.x - best.x, c.y - best.y); if (d < bb){ bb = d; back = c; } }
+        const size = Math.sqrt((a.a + best.a) / 2);
+        if (back === a && bd < 4 * size && bd / size > 0.05 && Math.max(a.a, best.a) < 3 * Math.min(a.a, best.a) && !isStatic(a))
+          ratios.push(bd / size);
+      }
+    }
+  }
+  ratios.sort((a, b) => a - b);
+  const med = ratios.length ? ratios[ratios.length >> 1] : null;
+  if (window.__pilot !== undefined) window.__pilot = {n: ratios.length, median: med, q75: ratios.length ? ratios[Math.floor(ratios.length * 0.75)] : null};
+  return {n: ratios.length, median: med, q75: ratios.length ? ratios[Math.floor(ratios.length * 0.75)] : null};
+}
+// let the browser breathe without using timers (timers are slowed down a lot
+// in background tabs; a message round-trip is not)
+const _yc = new MessageChannel(); const _yq = [];
+_yc.port1.onmessage = () => { const r = _yq.shift(); if (r) r(); };
+function yieldNow(){ return new Promise(r => { _yq.push(r); _yc.port2.postMessage(0); }); }
+
 // decode every frame in display order; onFrame(index, seconds, frame) may be async
 async function decodeAll(dm, file, onFrame){
   const pending = []; let err = null;
@@ -1316,14 +1496,14 @@ async function decodeAll(dm, file, onFrame){
       if (pending.length){
         const fr = pending.shift();
         try { await onFrame(idx++, fr.timestamp / 1e6, fr); } finally { fr.close(); }
-        if (idx % 8 === 0) await sleep(0);
+        if (idx % 8 === 0) await yieldNow();
         continue;
       }
       if (fed >= dm.count){
         if (!flushed){ flushed = true; await dec.flush(); continue; }
         break;
       }
-      await sleep(1);
+      await yieldNow();
     }
   } finally {
     for (const f of pending) f.close();
@@ -1338,12 +1518,14 @@ function makePainter(fps, tally, drawlog, shifts, showBoxes, geo){
   const scale = Math.min(1, 1280 / Math.max(S.vw, S.vh));
   const W = Math.round(S.vw * scale / 2) * 2, H = Math.round(S.vh * scale / 2) * 2;
   const barH = Math.max(60, Math.round(H * 0.07 / 2) * 2);
-  const c = document.createElement('canvas'); c.width = W; c.height = H + barH;
+  const topH = S.dateText ? barH : 0;                      // date bar above the video
+  const c = document.createElement('canvas'); c.width = W; c.height = H + barH + topH;
   const x = c.getContext('2d');
   const k = W / S.aw;
   const bandPts = showBoxes ? bandOutlinePath(geo, S.aw, S.ah) : null;
   const paint = (f, drawSrc) => {
     if (window.__paintDelayMs){ const e = performance.now() + window.__paintDelayMs; while (performance.now() < e); }
+    x.save(); x.translate(0, topH);
     drawSrc(x, W, H);
     if (showBoxes){
       const sh = shifts.get(f) || [0, 0];
@@ -1356,11 +1538,21 @@ function makePainter(fps, tally, drawlog, shifts, showBoxes, geo){
     x.fillStyle = '#fff'; x.font = `700 ${Math.round(barH * 0.55)}px system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif`;
     x.textAlign = 'center'; x.textBaseline = 'middle';
     x.fillText(`${n} Bats`, W / 2, H + barH / 2 + 1);
+    x.restore();
+    if (topH){ drawDateBar(x, W, topH, barH); }
   };
-  return {c, paint, W, H: H + barH};
+  return {c, paint, W, H: H + barH + topH};
 }
 
-async function encodeOutput(fps, tally, drawlog, shifts, showBoxes, geo, dur, dm){
+function drawDateBar(x, W, topH, barH){
+  x.fillStyle = '#000'; x.fillRect(0, 0, W, topH);
+  x.fillStyle = '#fff'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  let size = Math.round(barH * 0.5);
+  x.font = `700 ${size}px system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif`;
+  while (x.measureText(S.dateText).width > W * 0.92 && size > 10){ size--; x.font = `700 ${size}px system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif`; }
+  x.fillText(S.dateText, W / 2, topH / 2 + 1);
+}
+async function encodeOutput(fps, tally, drawlog, shifts, showBoxes, geo, dur, dm, step = 1){
   if (!('VideoEncoder' in window) || !('VideoFrame' in window)) return null;
   if (!dm){ await loadVideo(rec, S.url); rec.muted = true; }
   const {c, paint, W, H} = makePainter(fps, tally, drawlog, shifts, showBoxes, geo);
@@ -1392,11 +1584,11 @@ async function encodeOutput(fps, tally, drawlog, shifts, showBoxes, geo, dur, dm
     let n = 0;
     await decodeAll(dm, S.file, async (i, t, fr) => {
       if (encErr) throw encErr;
-      paint(i, (x, w_, h_) => drawUpright(x, fr, w_, h_, dm.rotation));
+      paint(Math.floor(i / step), (x, w_, h_) => drawUpright(x, fr, w_, h_, dm.rotation));
       const vf = new VideoFrame(c, {timestamp: Math.round(t * 1e6)});
       enc.encode(vf, {keyFrame: n % keyEvery0 === 0}); vf.close(); n++;
       if (n % 4 === 0){ lx.drawImage(c, 0, 0, live.width, live.height); setProg(0.6 + 0.4 * i / dm.count); }
-      while (enc.encodeQueueSize > 6) await sleep(2);
+      while (enc.encodeQueueSize > 6) await yieldNow();
     });
     await enc.flush(); enc.close();
     if (encErr) throw encErr;
@@ -1420,7 +1612,7 @@ async function encodeOutput(fps, tally, drawlog, shifts, showBoxes, geo, dur, dm
           gaps = 0; sinceAdj = 0;
         }
         lastT = md.mediaTime;
-        const f = Math.round(md.mediaTime * fps);
+        const f = Math.floor(md.mediaTime * fps / step + 0.5 / step);
         paint(f, (x, w_, h_) => x.drawImage(rec, 0, 0, w_, h_));
         const vf = new VideoFrame(c, {timestamp: Math.round(md.mediaTime * 1e6)});
         enc.encode(vf, {keyFrame: n % keyEvery === 0}); vf.close(); n++;
@@ -1448,14 +1640,8 @@ async function encodeOutput(fps, tally, drawlog, shifts, showBoxes, geo, dur, dm
   return buildMp4({samples, avcC, w: W, h: H, fps}, audio);
 }
 
-async function recordOutput(fps, tally, drawlog, shifts, showBoxes, geo, dur){
-  const scale = Math.min(1, 1280 / Math.max(S.vw, S.vh));
-  const W = Math.round(S.vw * scale / 2) * 2, H = Math.round(S.vh * scale / 2) * 2;
-  const barH = Math.max(60, Math.round(H * 0.07 / 2) * 2);
-  const c = document.createElement('canvas'); c.width = W; c.height = H + barH;
-  const x = c.getContext('2d');
-  const k = W / S.aw;
-  const bandPts = showBoxes ? bandOutlinePath(geo, S.aw, S.ah) : null;
+async function recordOutput(fps, tally, drawlog, shifts, showBoxes, geo, dur, step = 1){
+  const {c, paint: paintFn} = makePainter(fps, tally, drawlog, shifts, showBoxes, geo);
   await loadVideo(rec, S.url);
   rec.muted = false; rec.volume = 1;
   const vstream = c.captureStream(Math.min(60, Math.round(fps)));
@@ -1475,28 +1661,14 @@ async function recordOutput(fps, tally, drawlog, shifts, showBoxes, geo, dur){
   const chunks = []; mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
   const live = $('liveCanvas'), lx = live.getContext('2d');
   live.height = Math.round(live.width * c.height / c.width);
-  const paint = (f) => {
-    if (window.__paintDelayMs){ const e = performance.now() + window.__paintDelayMs; while (performance.now() < e); }
-    x.drawImage(rec, 0, 0, W, H);
-    if (showBoxes){
-      const sh = shifts.get(f) || [0, 0];
-      x.fillStyle = '#f2a541';
-      for (let i = 0; i < bandPts.length; i += 2) x.fillRect((bandPts[i] + sh[0]) * k, (bandPts[i + 1] + sh[1]) * k, Math.max(1, k * 0.6), Math.max(1, k * 0.6));
-      drawOverlay(x, drawlog.get(f) || [], f, k, sh, false, geo);
-    }
-    x.fillStyle = '#000'; x.fillRect(0, H, W, barH);
-    const n = tally[Math.min(f, tally.length - 1)];
-    x.fillStyle = '#fff'; x.font = `700 ${Math.round(barH * 0.55)}px system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif`;
-    x.textAlign = 'center'; x.textBaseline = 'middle';
-    x.fillText(`${n} Bats`, W / 2, H + barH / 2 + 1);
-  };
+  const paint = (f) => paintFn(f, (x, w_, h_) => x.drawImage(rec, 0, 0, w_, h_));
   await seek(rec, 0);
   paint(0);
   mr.start(1000);
   await new Promise(resolve => {
     const cb = (now, md) => {
       if (S.stop){ rec.pause(); resolve(); return; }
-      const f = Math.round(md.mediaTime * fps);
+      const f = Math.floor(md.mediaTime * fps / step + 0.5 / step);
       paint(f);
       lx.drawImage(c, 0, 0, live.width, live.width * c.height / c.width);
       setProg(0.6 + 0.4 * md.mediaTime / dur);
